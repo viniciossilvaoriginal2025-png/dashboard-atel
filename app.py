@@ -96,7 +96,7 @@ def load_and_preprocess_data(file_name):
 
     rename_mapping = {
         'NOM_AGENTE': 'Agente',
-        'QTDATENDIMENTOS': 'QTD Atendimento', 
+        'QTDATENDIMENTO': 'QTD Atendimento', # Corrigido (sem S)
         'SATISFACAO': 'Satisfacao',
         'QTDSATISFACAO': 'QTD Avaliacoes',
     }
@@ -175,7 +175,7 @@ def load_all_history_data():
                 # TRATAMENTO DE COLUNAS (ANTES de adicionar Mês/MonthSort)
                 df_temp.columns = df_temp.columns.str.strip().str.upper().str.replace('[^A-Z0-9_]+', '', regex=True) 
                 rename_mapping_temp = {
-                    'NOM_AGENTE': 'Agente', 'QTDATENDIMENTOS': 'QTD Atendimento', 
+                    'NOM_AGENTE': 'Agente', 'QTDATENDIMENTO': 'QTD Atendimento', # Corrigido (sem S)
                     'SATISFACAO': 'Satisfacao', 'QTDSATISFACAO': 'QTD Avaliacoes',
                 }
                 df_temp = df_temp.rename(columns=rename_mapping_temp)
@@ -238,7 +238,7 @@ def load_daily_data(selected_month_name, agente_name=None):
                 # Limpa colunas ANTES de adicionar Dia/DaySort
                 df_temp.columns = df_temp.columns.str.strip().str.upper().str.replace('[^A-Z0-9_]+', '', regex=True) 
                 rename_mapping_temp = {
-                    'NOM_AGENTE': 'Agente', 'QTDATENDIMENTOS': 'QTD Atendimento', 
+                    'NOM_AGENTE': 'Agente', 'QTDATENDIMENTO': 'QTD Atendimento', # Corrigido (sem S)
                     'SATISFACAO': 'Satisfacao', 'QTDSATISFACAO': 'QTD Avaliacoes',
                 }
                 df_temp = df_temp.rename(columns=rename_mapping_temp)
@@ -299,6 +299,71 @@ def load_daily_data(selected_month_name, agente_name=None):
     if 'Satisfacao' in df.columns and pd.api.types.is_numeric_dtype(df['Satisfacao']): df['Satisfacao'] = df['Satisfacao'] / 100 * 5 
     
     return df
+
+# 🚨 --- FUNÇÃO DE RANKING (MODIFICADA) --- 🚨
+@st.cache_data(show_spinner="Carregando dados do ranking semanal...")
+def load_ranking_data(filename): # Recebe o nome do arquivo
+    """Carrega um arquivo CSV de ranking da pasta 'data/semana/'."""
+    
+    RANKING_FILE_PATH = os.path.join('data', 'semana', filename)
+    
+    if not os.path.exists(RANKING_FILE_PATH):
+        # Retorna um DF vazio, o erro será tratado na função de exibição
+        return pd.DataFrame()
+        
+    try:
+        df = pd.read_csv(RANKING_FILE_PATH, encoding='utf-8', engine='python')
+    except Exception as e:
+        st.error(f"Erro ao ler o arquivo de ranking {RANKING_FILE_PATH}: {e}")
+        return pd.DataFrame()
+
+    # LIMPEZA E RENOMEAÇÃO DE COLUNAS
+    cols = df.columns.str.strip().str.upper()
+    df.columns = cols.str.replace('[^A-Z0-9_]+', '', regex=True) 
+
+    rename_mapping = {
+        'NOM_AGENTE': 'Agente',
+        'QTDATENDIMENTO': 'QTD Atendimento', # Corrigido (sem S)
+        'SATISFACAO': 'Satisfacao',
+        'QTDSATISFACAO': 'QTD Avaliacoes',
+    }
+    df = df.rename(columns=rename_mapping)
+
+    if 'Agente' not in df.columns:
+        st.error(f"Arquivo de ranking {filename} não contém a coluna 'Agente'.")
+        return pd.DataFrame()
+
+    # Conversão de colunas de tempo
+    def time_to_minutes(time_str):
+        if pd.isna(time_str) or time_str == '': return 0.0
+        try:
+            parts = str(time_str).split(':')
+            if len(parts) == 3: hours, minutes, seconds = map(float, parts); return (hours * 60) + minutes + seconds / 60
+            elif len(parts) == 2: minutes, seconds = map(float, parts); return minutes + seconds / 60
+            else: return 0.0
+        except: return 0.0
+
+    time_cols = ['TMA', 'TME', 'TMIA', 'TMIC']
+    for col in time_cols:
+        if col in df.columns and not df[col].isnull().all():
+             df[col] = df[col].apply(time_to_minutes)
+
+    # Conversão de FCR, Satisfacao e NPS (Garantindo que são numéricos)
+    for col in ['FCR', 'Satisfacao', 'NPS']:
+        if col in df.columns:
+            current_col_name = col
+            df[current_col_name] = df[current_col_name].astype(str).str.replace('%', '', regex=False).str.replace(',', '.', regex=False)
+            df[current_col_name] = pd.to_numeric(df[current_col_name], errors='coerce')
+    
+    # Normaliza FCR (0-1) e Satisfação (0-5)
+    if 'FCR' in df.columns and pd.api.types.is_numeric_dtype(df['FCR']):
+        df['FCR'] = df['FCR'] / 100
+    
+    if 'Satisfacao' in df.columns and pd.api.types.is_numeric_dtype(df['Satisfacao']):
+        df['Satisfacao'] = df['Satisfacao'] / 100 * 5 
+    
+    return df
+
 
 # --- Funções de Dashboard KPI e Histórico ---
 
@@ -389,7 +454,7 @@ def display_monthly_history(agente_name=None): # Nome do agente é opcional
     # Ordena usando a coluna MonthSort
     df_monthly = df_monthly.sort_values(by='MonthSort')
     
-    # 🚨 --- INÍCIO DA ADIÇÃO DO GRÁFICO --- 🚨
+    # --- Gráficos de Tendência Mensal ---
     st.subheader("Gráficos de Tendência Mensal")
     
     col1, col2 = st.columns(2)
@@ -424,7 +489,6 @@ def display_monthly_history(agente_name=None): # Nome do agente é opcional
             st.plotly_chart(fig_fcr, use_container_width=True)
     
     st.markdown("---")
-    # 🚨 --- FIM DA ADIÇÃO DO GRÁFICO --- 🚨
 
     # Tabela de Histórico
     st.subheader("Tabela de Histórico Mês a Mês")
@@ -558,7 +622,7 @@ def display_user_dashboard(df_agent_current_month): # Recebe dados do mês selec
         st.dataframe(df_display[final_cols], use_container_width=True)
 
     # --- Painel de Histórico (Tabela 2) ---
-    display_monthly_history(agente_name) 
+    display_monthly_history(agente_name=agente_name) 
 
     # --- Painel de Detalhe Diário (Tabela 3) ---
     display_daily_detail(selected_month, agente_name=agente_name)
@@ -580,7 +644,6 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
     
     # 2. Filtro de Agente
     agent_list = ["Todos os Agentes"]
-    # Pega a lista de agentes (dos dados diários se existirem, senão dos mensais)
     source_df_for_agents = df_daily_full if is_date_available else df_monthly_aggregate
     
     if 'Agente' in source_df_for_agents.columns:
@@ -681,76 +744,132 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
         # 2. Se "Todos os Agentes", mostra o painel de Admin (Ranking, etc.)
         
         # Criação das abas
-        tab1, tab2, tab3 = st.tabs(["Visão Geral (Período Selecionado)", "Histórico Geral (Todos os Meses)", "Detalhe Diário (Período Selecionado)"])
+        tab1, tab2, tab3 = st.tabs(["Visão Geral", "Histórico Geral (Todos os Meses)", "Detalhe Diário (Período Selecionado)"])
 
         with tab1:
             st.subheader("📈 Métricas Agregadas (Período Selecionado)")
-            display_kpi(df_filtered)
+            display_kpi(df_filtered) # Usa o DF filtrado (diário ou mensal)
             
-            st.subheader("🏆 Ranking Top 3 (Período Selecionado)")
+            # 🚨 --- INÍCIO DA ATUALIZAÇÃO (RANKING SEMANAL) --- 🚨
+            st.subheader("🏆 Ranking Semanal (Top 3)")
+            st.info("Este ranking é baseado nos arquivos da pasta 'data/semana/' e não é afetado pelos filtros de calendário.")
             
-            agg_cols = [col for col in ['QTD Atendimento', 'Satisfacao', 'NPS', 'FCR', 'TMA', 'TME', 'TMIA'] if col in df_filtered.columns]
+            # Colunas para os dois rankings
+            col_atual, col_anterior = st.columns(2)
             
-            if 'Agente' in df_filtered.columns and agg_cols:
-                agg_dict = {col: ('sum' if col.startswith('QTD') else 'mean') for col in agg_cols}
-                df_compare = df_filtered.groupby('Agente').agg(agg_dict).reset_index()
+            with col_atual:
+                st.markdown("##### 🥇 Semana Atual")
+                df_ranking_atual = load_ranking_data("ranking_semanal_atual.csv")
+                
+                if df_ranking_atual.empty:
+                    st.warning("Arquivo 'ranking_semanal_atual.csv' não encontrado ou vazio.")
+                elif 'Agente' not in df_ranking_atual.columns:
+                     st.error("Ranking Atual: Coluna 'Agente' não encontrada.")
+                else:
+                    agg_cols = [col for col in ['QTD Atendimento', 'Satisfacao', 'FCR', 'TMIA'] if col in df_ranking_atual.columns]
+                    agg_dict = {col: ('sum' if col.startswith('QTD') else 'mean') for col in agg_cols}
+                    df_compare_atual = df_ranking_atual.groupby('Agente').agg(agg_dict).reset_index()
 
-                col1, col2, col3 = st.columns(3)
-
-                # Métrica 1: FCR
-                with col1:
-                    st.markdown("##### 🥇 FCR (First Call Resolution)")
-                    if 'FCR' in df_compare.columns:
-                        df_fcr_filtered = df_compare[(df_compare['FCR'] > 0.0) & (df_compare['FCR'] < 1.0)]
-                        top_fcr = df_fcr_filtered.sort_values(by='FCR', ascending=False).head(3) 
+                    # FCR (Desempate: QTD Atendimento)
+                    if 'FCR' in df_compare_atual.columns and 'QTD Atendimento' in df_compare_atual.columns:
+                        df_fcr_filtered = df_compare_atual[(df_compare_atual['FCR'] > 0.0) & (df_compare_atual['FCR'] < 1.0)]
+                        top_fcr = df_fcr_filtered.sort_values(by=['FCR', 'QTD Atendimento'], ascending=[False, False]).head(3) 
                         top_fcr = top_fcr[['Agente', 'FCR']] 
                         top_fcr['FCR'] = (top_fcr['FCR'] * 100).map('{:.2f}%'.format) 
                         st.dataframe(top_fcr, use_container_width=True, hide_index=True)
-                    else: st.info("Métrica 'FCR' não disponível.")
-                # Métrica 2: Satisfacao
-                with col2:
-                    st.markdown("##### 🥇 Satisfação")
-                    if 'Satisfacao' in df_compare.columns:
-                        df_satisfacao_filtered = df_compare[(df_compare['Satisfacao'] > 0.0) & (df_compare['Satisfacao'] < 5.0)]
-                        top_satisfacao = df_satisfacao_filtered.sort_values(by='Satisfacao', ascending=False).head(3)
+                    else: st.info("FCR ou QTD Atendimento não disponível para ranking.")
+
+                    # Satisfacao (Desempate: QTD Atendimento)
+                    if 'Satisfacao' in df_compare_atual.columns and 'QTD Atendimento' in df_compare_atual.columns:
+                        df_satisfacao_filtered = df_compare_atual[(df_compare_atual['Satisfacao'] > 0.0) & (df_compare_atual['Satisfacao'] < 5.0)]
+                        top_satisfacao = df_satisfacao_filtered.sort_values(by=['Satisfacao', 'QTD Atendimento'], ascending=[False, False]).head(3)
                         top_satisfacao = top_satisfacao[['Agente', 'Satisfacao']]
                         top_satisfacao['Satisfacao'] = (top_satisfacao['Satisfacao'] / 5.0 * 100).map('{:.2f}%'.format)
                         st.dataframe(top_satisfacao, use_container_width=True, hide_index=True)
-                    else: st.info("Métrica 'Satisfacao' não disponível.")
-                # Métrica 3: TMIA
-                with col3:
-                    st.markdown("##### 🥇 TMIA (Menor Inatividade)")
-                    if 'TMIA' in df_compare.columns:
-                        df_tmia_filtered = df_compare[(df_compare['TMIA'] > 0.0)]
-                        top_tmia = df_tmia_filtered.sort_values(by='TMIA', ascending=True).head(3) # MENOR
+                    else: st.info("Satisfação ou QTD Atendimento não disponível para ranking.")
+
+                    # TMIA (Desempate: QTD Atendimento)
+                    if 'TMIA' in df_compare_atual.columns and 'QTD Atendimento' in df_compare_atual.columns:
+                        df_tmia_filtered = df_compare_atual[(df_compare_atual['TMIA'] > 0.0)]
+                        top_tmia = df_tmia_filtered.sort_values(by=['TMIA', 'QTD Atendimento'], ascending=[True, False]).head(3) # TMIA menor, QTD Atendimento maior
                         top_tmia = top_tmia[['Agente', 'TMIA']]
                         top_tmia['TMIA'] = top_tmia['TMIA'].apply(format_time)
                         st.dataframe(top_tmia, use_container_width=True, hide_index=True)
-                    else: st.info("Métrica 'TMIA' não disponível.")
+                    else: st.info("TMIA ou QTD Atendimento não disponível para ranking.")
+
+            with col_anterior:
+                st.markdown("##### 🥈 Semana Anterior")
+                df_ranking_anterior = load_ranking_data("ranking_semanal_anterior.csv")
                 
-                st.markdown("---")
+                if df_ranking_anterior.empty:
+                    st.warning("Arquivo 'ranking_semanal_anterior.csv' não encontrado ou vazio.")
+                elif 'Agente' not in df_ranking_anterior.columns:
+                     st.error("Ranking Anterior: Coluna 'Agente' não encontrada.")
+                else:
+                    agg_cols_ant = [col for col in ['QTD Atendimento', 'Satisfacao', 'FCR', 'TMIA'] if col in df_ranking_anterior.columns]
+                    agg_dict_ant = {col: ('sum' if col.startswith('QTD') else 'mean') for col in agg_cols_ant}
+                    df_compare_anterior = df_ranking_anterior.groupby('Agente').agg(agg_dict_ant).reset_index()
+
+                    # FCR (Desempate: QTD Atendimento)
+                    if 'FCR' in df_compare_anterior.columns and 'QTD Atendimento' in df_compare_anterior.columns:
+                        df_fcr_filtered_ant = df_compare_anterior[(df_compare_anterior['FCR'] > 0.0) & (df_compare_anterior['FCR'] < 1.0)]
+                        top_fcr_ant = df_fcr_filtered_ant.sort_values(by=['FCR', 'QTD Atendimento'], ascending=[False, False]).head(3) 
+                        top_fcr_ant = top_fcr_ant[['Agente', 'FCR']] 
+                        top_fcr_ant['FCR'] = (top_fcr_ant['FCR'] * 100).map('{:.2f}%'.format) 
+                        st.dataframe(top_fcr_ant, use_container_width=True, hide_index=True)
+                    else: st.info("FCR ou QTD Atendimento não disponível para ranking.")
+                    
+                    # Satisfacao (Desempate: QTD Atendimento)
+                    if 'Satisfacao' in df_compare_anterior.columns and 'QTD Atendimento' in df_compare_anterior.columns:
+                        df_satisfacao_filtered_ant = df_compare_anterior[(df_compare_anterior['Satisfacao'] > 0.0) & (df_compare_anterior['Satisfacao'] < 5.0)]
+                        top_satisfacao_ant = df_satisfacao_filtered_ant.sort_values(by=['Satisfacao', 'QTD Atendimento'], ascending=[False, False]).head(3)
+                        top_satisfacao_ant = top_satisfacao_ant[['Agente', 'Satisfacao']]
+                        top_satisfacao_ant['Satisfacao'] = (top_satisfacao_ant['Satisfacao'] / 5.0 * 100).map('{:.2f}%'.format)
+                        st.dataframe(top_satisfacao_ant, use_container_width=True, hide_index=True)
+                    else: st.info("Satisfação ou QTD Atendimento não disponível para ranking.")
+
+                    # TMIA (Desempate: QTD Atendimento)
+                    if 'TMIA' in df_compare_anterior.columns and 'QTD Atendimento' in df_compare_anterior.columns:
+                        df_tmia_filtered_ant = df_compare_anterior[(df_compare_anterior['TMIA'] > 0.0)]
+                        top_tmia_ant = df_tmia_filtered_ant.sort_values(by=['TMIA', 'QTD Atendimento'], ascending=[True, False]).head(3) # TMIA menor, QTD Atendimento maior
+                        top_tmia_ant = top_tmia_ant[['Agente', 'TMIA']]
+                        top_tmia_ant['TMIA'] = top_tmia_ant['TMIA'].apply(format_time)
+                        st.dataframe(top_tmia_ant, use_container_width=True, hide_index=True)
+                    else: st.info("TMIA ou QTD Atendimento não disponível para ranking.")
+
+            st.markdown("---")
+            # 🚨 --- FIM DA ATUALIZAÇÃO --- 🚨
+            
+            # Gráficos de Comparação (Baseados no FILTRO DE CALENDÁRIO)
+            st.subheader("⚖️ Comparação de Agentes (Período Selecionado)")
+            
+            if 'Agente' in df_filtered.columns:
+                agg_dict_cal = {col: ('sum' if col.startswith('QTD') else 'mean') 
+                                for col in agg_cols if col in df_filtered.columns}
                 
-                # Gráficos de Comparação
-                st.subheader("⚖️ Comparação de Agentes (Gráficos)")
+                # Certifica que agg_dict_cal não está vazio
+                if agg_dict_cal:
+                    df_compare_calendario = df_filtered.groupby('Agente').agg(agg_dict_cal).reset_index()
+
+                    if 'Satisfacao' in df_compare_calendario.columns:
+                        fig_sat_agent = px.bar(df_compare_calendario.sort_values(by='Satisfacao', ascending=False), x='Agente', y='Satisfacao', title='Média de Satisfação por Agente', color='Satisfacao', color_continuous_scale=px.colors.sequential.Plotly3)
+                        st.plotly_chart(fig_sat_agent, use_container_width=True)
+                    if 'TMA' in df_compare_calendario.columns:
+                        fig_tma_agent = px.bar(df_compare_calendario.sort_values(by='TMA', ascending=False), x='Agente', y='TMA', title='TMA (Tempo Médio de Atendimento) por Agente (em minutos)', color='TMA', color_continuous_scale=px.colors.sequential.Reds)
+                        st.plotly_chart(fig_tma_agent, use_container_width=True)
+                    
+                    # Tabela Consolidada de Agentes (Período Selecionado)
+                    st.markdown("---")
+                    st.subheader("📋 Tabela Consolidada de Agentes (Período Selecionado)")
+                    
+                    df_compare_sorted = df_compare_calendario.sort_values(by=['Satisfacao', 'QTD Atendimento'], ascending=[False, False])
+                    df_display_admin_agg = apply_formatting(df_compare_sorted)
+                    st.dataframe(df_display_admin_agg, use_container_width=True, hide_index=True)
                 
-                if 'Satisfacao' in df_compare.columns:
-                    fig_sat_agent = px.bar(df_compare.sort_values(by='Satisfacao', ascending=False), x='Agente', y='Satisfacao', title='Média de Satisfação por Agente', color='Satisfacao', color_continuous_scale=px.colors.sequential.Plotly3)
-                    st.plotly_chart(fig_sat_agent, use_container_width=True)
-                if 'TMA' in df_compare.columns:
-                    fig_tma_agent = px.bar(df_compare.sort_values(by='TMA', ascending=False), x='Agente', y='TMA', title='TMA (Tempo Médio de Atendimento) por Agente (em minutos)', color='TMA', color_continuous_scale=px.colors.sequential.Reds)
-                    st.plotly_chart(fig_tma_agent, use_container_width=True)
-                
-                # 🚨 --- INÍCIO DA ADIÇÃO (Tabela Agregada) --- 🚨
-                st.markdown("---")
-                st.subheader("📋 Tabela Consolidada de Agentes (Período Selecionado)")
-                
-                # Re-usa o df_compare que já foi calculado para os rankings/gráficos
-                df_display_admin_agg = apply_formatting(df_compare)
-                st.dataframe(df_display_admin_agg, use_container_width=True, hide_index=True)
-                # 🚨 --- FIM DA ADIÇÃO --- 🚨
-                
+                else: 
+                    st.warning("Não há colunas de métricas suficientes no período selecionado para comparar agentes.")
             else: 
-                st.warning("Não há colunas de métricas suficientes para realizar a comparação entre agentes.")
+                st.warning("Não há dados de 'Agente' no período selecionado.")
 
         with tab2:
             # Chama a função de histórico SEM nome de agente (visão admin/geral)
