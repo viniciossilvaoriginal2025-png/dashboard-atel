@@ -1,42 +1,78 @@
 import json
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection # Nova importação
+import gspread
+from gspread_dataframe import set_with_dataframe, get_as_dataframe
+from google.oauth2.service_account import Credentials
 
-# --- Configurações do Google Sheets ---
-# O nome da planilha (aba) dentro do arquivo. Geralmente é 'Página1' ou 'Sheet1'
+# --- Configurações ---
+# O URL é pego dos "Segredos" do Streamlit, não fica no código.
 WORKSHEET_NAME = "Página1" 
 DEFAULT_PASSWORD = '12345'
 
-# --- Funções de Conexão (NOVAS) ---
+# Define os "escopos" (permissões) que o gspread precisa
+SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+
+# --- Funções de Conexão (NOVAS, usando gspread) ---
 
 def get_connection():
     """Conecta ao Google Sheets usando os Segredos do Streamlit."""
-    # "gsheets" é o nome da conexão que definiremos no Streamlit Cloud
-    return st.connection("gsheets", type=GSheetsConnection)
+    try:
+        # Pega as credenciais JSON dos "Segredos" do Streamlit
+        creds_json = st.secrets["connections"]["gsheets"]["service_account_info"]
+        creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        
+        # Pega o URL da planilha dos "Segredos"
+        spreadsheet_url = st.secrets["spreadsheet_url"]
+        spreadsheet = client.open_by_url(spreadsheet_url)
+        
+        worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
+        return worksheet
+    except KeyError:
+        st.error("Erro: 'connections.gsheets' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique a Etapa 5.")
+        return None
+    except Exception as e:
+        st.error(f"Não foi possível conectar ao Google Sheets: {e}")
+        return None
 
 def load_users_df():
     """Carrega a planilha inteira de usuários como um DataFrame."""
-    conn = get_connection()
+    worksheet = get_connection()
+    if worksheet is None:
+        return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
     try:
-        # Lê a planilha, usa as 5 primeiras colunas, e define um cache de 5 segundos
-        df = conn.read(worksheet=WORKSHEET_NAME, usecols=range(5), ttl=5)
-        # Limpa linhas vazias que o GSheets às vezes retorna
-        df = df.dropna(subset=[df.columns[0]]) 
+        # Usa gspread-dataframe para ler a planilha
+        df = get_as_dataframe(worksheet, evaluate_formulas=True)
+        # Garante que as colunas esperadas existam
+        for col in ["username", "password", "role", "agente", "primeiro_acesso"]:
+             if col not in df.columns:
+                 df[col] = pd.NA
+                 
+        # Limpa linhas vazias
+        df = df.dropna(subset=['username'])
         # Garante que 'primeiro_acesso' seja lido como Booleano
-        df['primeiro_acesso'] = df['primeiro_acesso'].map({'TRUE': True, 'FALSE': False, True: True, False: False})
+        df['primeiro_acesso'] = df['primeiro_acesso'].map({'TRUE': True, 'FALSE': False, True: True, False: False}).fillna(True)
+        # Garante que a senha seja string
+        df['password'] = df['password'].astype(str)
         return df
     except Exception as e:
-        st.error(f"Não foi possível conectar ao Google Sheets: {e}")
+        st.error(f"Não foi possível ler os dados do Google Sheets: {e}")
         return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
 
 def save_users_df(df):
     """Salva (sobrescreve) o DataFrame inteiro de volta no Google Sheets."""
+    worksheet = get_connection()
+    if worksheet is None:
+        return
     try:
-        conn = get_connection()
         # Garante que 'primeiro_acesso' seja salvo como string 'TRUE'/'FALSE'
         df['primeiro_acesso'] = df['primeiro_acesso'].map({True: 'TRUE', False: 'FALSE'})
-        conn.write(worksheet=WORKSHEET_NAME, data=df)
+        worksheet.clear() # Limpa a planilha
+        set_with_dataframe(worksheet, df) # Escreve o DataFrame de volta
     except Exception as e:
         st.error(f"Falha ao salvar usuários no Google Sheets: {e}")
 
@@ -197,7 +233,7 @@ def user_manager_interface(df):
             "Login": login,
             "Nome do Agente": info.get('agente', 'N/A'),
             "Função": info.get('role', 'user').capitalize(),
-            "Primeiro Acesso": "Sim" if info.get('primeiro_acesso', False) else "Não"
+            "Primeiro Acesso": "Sim" if info.get('primeiro_acesso', True) else "Não" # Padrão True
         })
 
     df_users = pd.DataFrame(user_list)
