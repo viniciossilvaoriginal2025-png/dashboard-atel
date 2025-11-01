@@ -364,7 +364,7 @@ def load_ranking_data(filename): # Recebe o nome do arquivo
     
     return df
 
-# 🚨 --- INÍCIO DA ADIÇÃO (Função 5: Avaliações) --- 🚨
+# --- Função 5: Carrega os dados de AVALIAÇÃO Diária ---
 @st.cache_data(show_spinner="Carregando avaliações diárias...")
 def load_evaluation_data(selected_month_name, agente_name):
     """Carrega todos os CSVs da subpasta 'data/[mês]/notas/' e filtra pelo agente."""
@@ -390,7 +390,7 @@ def load_evaluation_data(selected_month_name, agente_name):
                 rename_mapping_temp = {
                     'NOM_AGENTE': 'Agente', 
                     'NUM_PROTOCOLO': 'Protocolo',
-                    'NOM_VALOR': 'Nota', # 'nom_valor' vira 'NOMVALOR'
+                    'NOM_VALOR': 'Nota', # 'nom_valor' vira 'NOMVALOR' -> 'Nota'
                     'DIA': 'Dia (CSV)' # Coluna 'Dia' original do CSV
                 }
                 df_temp = df_temp.rename(columns=rename_mapping_temp)
@@ -417,8 +417,6 @@ def load_evaluation_data(selected_month_name, agente_name):
     if not df_list: return pd.DataFrame()
     df = pd.concat(df_list, ignore_index=True)
     return df
-# 🚨 --- FIM DA ADIÇÃO --- 🚨
-
 
 # --- Funções de Dashboard KPI e Histórico ---
 
@@ -712,7 +710,7 @@ def display_user_dashboard(df_agent_current_month): # Recebe dados do mês selec
         st.dataframe(df_display[final_cols], use_container_width=True)
 
     # --- Painel de Histórico (Tabela 2) ---
-    display_monthly_history(agente_name) 
+    display_monthly_history(agente_name=agente_name) 
 
     # --- Painel de Detalhe Diário (Tabela 3) ---
     display_daily_detail(selected_month, agente_name=agente_name)
@@ -847,11 +845,13 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
             st.subheader("📈 Métricas Agregadas (Período Selecionado)")
             display_kpi(df_filtered) # Usa o DF filtrado (diário ou mensal)
             
-            # Rankings Semanais
-            st.subheader("🏆 Ranking Semanal (Top 3)")
-            st.info("Este ranking é baseado nos arquivos da pasta 'data/semana/' e não é afetado pelos filtros de calendário.")
-            col_rank1, col_rank2 = st.columns(2)
+            # Rankings (Sempre visíveis, não filtrados pelo calendário)
+            st.subheader("🏆 Ranking Top 3")
+            st.info("Os rankings abaixo são baseados nos arquivos consolidados (semanais e mensal) e **não** são afetados pelo filtro de calendário.")
             
+            col_rank1, col_rank2, col_rank3 = st.columns(3)
+            
+            # --- RANKING 1: SEMANAL ATUAL ---
             with col_rank1:
                 st.markdown("##### 🥇 Semana Atual")
                 df_ranking_atual = load_ranking_data("ranking_semanal_atual.csv")
@@ -865,18 +865,21 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
                     agg_dict = {col: ('sum' if col.startswith('QTD') else 'mean') for col in agg_cols}
                     df_compare_atual = df_ranking_atual.groupby('Agente').agg(agg_dict).reset_index()
 
+                    # FCR
                     if 'FCR' in df_compare_atual.columns and 'QTD Atendimento' in df_compare_atual.columns:
                         df_fcr_filtered = df_compare_atual[(df_compare_atual['FCR'] > 0.0) & (df_compare_atual['FCR'] < 1.0)]
                         top_fcr = df_fcr_filtered.sort_values(by=['FCR', 'QTD Atendimento'], ascending=[False, False]).head(3) 
                         top_fcr = top_fcr[['Agente', 'FCR']] 
                         top_fcr['FCR'] = (top_fcr['FCR'] * 100).map('{:.2f}%'.format) 
                         st.dataframe(top_fcr, use_container_width=True, hide_index=True)
+                    # Satisfacao
                     if 'Satisfacao' in df_compare_atual.columns and 'QTD Atendimento' in df_compare_atual.columns:
                         df_satisfacao_filtered = df_compare_atual[(df_compare_atual['Satisfacao'] > 0.0) & (df_compare_atual['Satisfacao'] < 5.0)]
                         top_satisfacao = df_satisfacao_filtered.sort_values(by=['Satisfacao', 'QTD Atendimento'], ascending=[False, False]).head(3)
                         top_satisfacao = top_satisfacao[['Agente', 'Satisfacao']]
                         top_satisfacao['Satisfacao'] = (top_satisfacao['Satisfacao'] / 5.0 * 100).map('{:.2f}%'.format)
                         st.dataframe(top_satisfacao, use_container_width=True, hide_index=True)
+                    # TMIA
                     if 'TMIA' in df_compare_atual.columns and 'QTD Atendimento' in df_compare_atual.columns:
                         df_tmia_filtered = df_compare_atual[(df_compare_atual['TMIA'] > 0.0)]
                         top_tmia = df_tmia_filtered.sort_values(by=['TMIA', 'QTD Atendimento'], ascending=[True, False]).head(3)
@@ -884,6 +887,7 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
                         top_tmia['TMIA'] = top_tmia['TMIA'].apply(format_time)
                         st.dataframe(top_tmia, use_container_width=True, hide_index=True)
 
+            # --- RANKING 2: SEMANAL ANTERIOR ---
             with col_rank2:
                 st.markdown("##### 🥈 Semana Anterior")
                 df_ranking_anterior = load_ranking_data("ranking_semanal_anterior.csv")
@@ -897,24 +901,67 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
                     agg_dict_ant = {col: ('sum' if col.startswith('QTD') else 'mean') for col in agg_cols_ant}
                     df_compare_anterior = df_ranking_anterior.groupby('Agente').agg(agg_dict_ant).reset_index()
 
+                    # FCR
                     if 'FCR' in df_compare_anterior.columns and 'QTD Atendimento' in df_compare_anterior.columns:
                         df_fcr_filtered_ant = df_compare_anterior[(df_compare_anterior['FCR'] > 0.0) & (df_compare_anterior['FCR'] < 1.0)]
                         top_fcr_ant = df_fcr_filtered_ant.sort_values(by=['FCR', 'QTD Atendimento'], ascending=[False, False]).head(3) 
                         top_fcr_ant = top_fcr_ant[['Agente', 'FCR']] 
                         top_fcr_ant['FCR'] = (top_fcr_ant['FCR'] * 100).map('{:.2f}%'.format) 
                         st.dataframe(top_fcr_ant, use_container_width=True, hide_index=True)
+                    # Satisfacao
                     if 'Satisfacao' in df_compare_anterior.columns and 'QTD Atendimento' in df_compare_anterior.columns:
                         df_satisfacao_filtered_ant = df_compare_anterior[(df_compare_anterior['Satisfacao'] > 0.0) & (df_compare_anterior['Satisfacao'] < 5.0)]
                         top_satisfacao_ant = df_satisfacao_filtered_ant.sort_values(by=['Satisfacao', 'QTD Atendimento'], ascending=[False, False]).head(3)
                         top_satisfacao_ant = top_satisfacao_ant[['Agente', 'Satisfacao']]
                         top_satisfacao_ant['Satisfacao'] = (top_satisfacao_ant['Satisfacao'] / 5.0 * 100).map('{:.2f}%'.format)
                         st.dataframe(top_satisfacao_ant, use_container_width=True, hide_index=True)
+                    # TMIA
                     if 'TMIA' in df_compare_anterior.columns and 'QTD Atendimento' in df_compare_anterior.columns:
                         df_tmia_filtered_ant = df_compare_anterior[(df_compare_anterior['TMIA'] > 0.0)]
                         top_tmia_ant = df_tmia_filtered_ant.sort_values(by=['TMIA', 'QTD Atendimento'], ascending=[True, False]).head(3)
                         top_tmia_ant = top_tmia_ant[['Agente', 'TMIA']]
                         top_tmia_ant['TMIA'] = top_tmia_ant['TMIA'].apply(format_time)
                         st.dataframe(top_tmia_ant, use_container_width=True, hide_index=True)
+
+            # --- RANKING 3: MÊS ATUAL (CONSOLIDADO) ---
+            with col_rank3:
+                st.markdown(f"##### 🥉 Consolidado do Mês ({selected_month})")
+                st.info(f"Base: '{MESES.get(selected_month.lower())}'")
+                
+                # Usa o df_monthly_aggregate (o CSV do mês inteiro)
+                if df_monthly_aggregate.empty:
+                    st.warning("Arquivo consolidado do mês não encontrado.")
+                elif 'Agente' not in df_monthly_aggregate.columns:
+                     st.error("Ranking Mensal: Coluna 'Agente' não encontrada.")
+                else:
+                    # Não precisa agregar, pois df_monthly_aggregate já é agregado
+                    df_compare_monthly = df_monthly_aggregate.copy() 
+
+                    # FCR
+                    if 'FCR' in df_compare_monthly.columns and 'QTD Atendimento' in df_compare_monthly.columns:
+                        df_fcr_filtered_cal = df_compare_monthly[(df_compare_monthly['FCR'] > 0.0) & (df_compare_monthly['FCR'] < 1.0)]
+                        top_fcr_cal = df_fcr_filtered_cal.sort_values(by=['FCR', 'QTD Atendimento'], ascending=[False, False]).head(3) 
+                        top_fcr_cal = top_fcr_cal[['Agente', 'FCR']] 
+                        top_fcr_cal['FCR'] = (top_fcr_cal['FCR'] * 100).map('{:.2f}%'.format) 
+                        st.dataframe(top_fcr_cal, use_container_width=True, hide_index=True)
+                    else: st.info("Métrica 'FCR' não disponível.")
+                    # Satisfacao
+                    if 'Satisfacao' in df_compare_monthly.columns and 'QTD Atendimento' in df_compare_monthly.columns:
+                        df_satisfacao_filtered_cal = df_compare_monthly[(df_compare_monthly['Satisfacao'] > 0.0) & (df_compare_monthly['Satisfacao'] < 5.0)]
+                        top_satisfacao_cal = df_satisfacao_filtered_cal.sort_values(by=['Satisfacao', 'QTD Atendimento'], ascending=[False, False]).head(3)
+                        top_satisfacao_cal = top_satisfacao_cal[['Agente', 'Satisfacao']]
+                        top_satisfacao_cal['Satisfacao'] = (top_satisfacao_cal['Satisfacao'] / 5.0 * 100).map('{:.2f}%'.format)
+                        st.dataframe(top_satisfacao_cal, use_container_width=True, hide_index=True)
+                    else: st.info("Métrica 'Satisfacao' não disponível.")
+                    # TMIA
+                    if 'TMIA' in df_compare_monthly.columns and 'QTD Atendimento' in df_compare_monthly.columns:
+                        df_tmia_filtered_cal = df_compare_monthly[(df_compare_monthly['TMIA'] > 0.0)]
+                        top_tmia_cal = df_tmia_filtered_cal.sort_values(by=['TMIA', 'QTD Atendimento'], ascending=[True, False]).head(3)
+                        top_tmia_cal = top_tmia_cal[['Agente', 'TMIA']]
+                        top_tmia_cal['TMIA'] = top_tmia_cal['TMIA'].apply(format_time)
+                        st.dataframe(top_tmia_cal, use_container_width=True, hide_index=True)
+                    else: st.info("Métrica 'TMIA' não disponível.")
+
             st.markdown("---")
             
             # Gráficos de Comparação (Baseados no FILTRO DE CALENDÁRIO)
