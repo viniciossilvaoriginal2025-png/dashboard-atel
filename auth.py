@@ -141,7 +141,7 @@ def add_user_from_csv(login, nome_agente):
     return False
 
 def add_manual_user(login, nome_agente, role):
-    """Adiciona um novo usuário manually (admin, user) com senha padrão."""
+    """Adiciona um novo usuário manualmente (admin, user) com senha padrão."""
     users = load_users()
     if not login or not nome_agente:
         return False, "Login e Nome do Agente são obrigatórios."
