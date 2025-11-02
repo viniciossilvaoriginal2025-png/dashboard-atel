@@ -22,14 +22,10 @@ def get_connection():
     try:
         creds_json_str = st.secrets["service_account_json"]
         
-        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI (DUAS LINHAS) --- 🚨
-        
-        # 1. Corrige o erro 'Incorrect padding' (quebras de linha)
+        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI --- 🚨
+        # O TOML salva as quebras de linha como '\\n'. 
+        # Esta linha transforma '\\n' (texto) de volta em '\n' (quebra de linha real).
         creds_json_str = creds_json_str.replace('\\n', '\n')
-        
-        # 2. Corrige o erro 'JSON inválido' (caracteres invisíveis ' ')
-        creds_json_str = creds_json_str.replace('\u00a0', ' ')
-        
         # 🚨 --- FIM DA CORREÇÃO --- 🚨
         
         creds_dict = json.loads(creds_json_str)
@@ -58,14 +54,7 @@ def load_users_df():
     if worksheet is None:
         return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
     try:
-        # --- MUDANÇA: USANDO UM MÉTODO DE LEITURA MAIS ROBUSTO ---
-        all_data = worksheet.get_all_records() # Lê os dados como lista de dicts
-        if not all_data:
-            # Isso acontece se a planilha tiver apenas cabeçalhos, mas nenhuma linha de dados
-            return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
-
-        df = pd.DataFrame(all_data) # Converte para DataFrame
-        # --- FIM DA MUDANÇA ---
+        df = get_as_dataframe(worksheet, evaluate_formulas=True)
         
         expected_cols = ["username", "password", "role", "agente", "primeiro_acesso"]
         for col in expected_cols:
@@ -266,7 +255,7 @@ def user_manager_interface(df):
 
     if st.button("Redefinir Senha do Usuário") and user_to_reset:
         if new_pass_reset:
-            if change_password_db(user_to_reset, new_pass_reset):
+            if change_password_db(user_to_reset, new_password):
                 users = load_users() 
                 users[user_to_reset]['primeiro_acesso'] = True 
                 save_users(users)
