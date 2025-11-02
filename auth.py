@@ -22,10 +22,14 @@ def get_connection():
     try:
         creds_json_str = st.secrets["service_account_json"]
         
-        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI --- 🚨
-        # O TOML salva as quebras de linha como '\\n'. 
-        # Esta linha transforma '\\n' (texto) de volta em '\n' (quebra de linha real).
+        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI (DUAS LINHAS) --- 🚨
+        
+        # 1. Corrige o erro 'Incorrect padding' (quebras de linha)
         creds_json_str = creds_json_str.replace('\\n', '\n')
+        
+        # 2. Corrige o erro 'JSON inválido' (caracteres invisíveis ' ')
+        creds_json_str = creds_json_str.replace('\u00a0', ' ')
+        
         # 🚨 --- FIM DA CORREÇÃO --- 🚨
         
         creds_dict = json.loads(creds_json_str)
@@ -255,7 +259,7 @@ def user_manager_interface(df):
 
     if st.button("Redefinir Senha do Usuário") and user_to_reset:
         if new_pass_reset:
-            if change_password_db(user_to_reset, new_pass_reset):
+            if change_password_db(user_to_reset, new_password):
                 users = load_users() 
                 users[user_to_reset]['primeiro_acesso'] = True 
                 save_users(users)
