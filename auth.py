@@ -39,7 +39,7 @@ def get_connection():
         st.error("Erro: 'service_account_json' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
         return None
     except json.JSONDecodeError:
-        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido. (Verifique se há caracteres ' ' invisíveis no seu TOML)")
+        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido. (Verifique se há caracteres ' ' invisíveis no seu TOML)")
         return None
     except Exception as e:
         st.error(f"Não foi possível conectar ao Google Sheets: {e}")
