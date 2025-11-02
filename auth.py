@@ -4,13 +4,11 @@ import pandas as pd
 import gspread
 from gspread_dataframe import set_with_dataframe, get_as_dataframe
 from google.oauth2.service_account import Credentials
-import pandas.api.types # 🚨 ADICIONADO PARA CORREÇÃO
+import pandas.api.types
 
 # --- Configurações ---
 WORKSHEET_NAME = "Página1" 
 DEFAULT_PASSWORD = '12345'
-
-# Define os "escopos" (permissões) que o gspread precisa
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
@@ -18,28 +16,23 @@ SCOPES = [
 
 # --- Funções de Conexão (CORRIGIDAS) ---
 
+@st.cache_resource(ttl=300) # Armazena a conexão por 5 minutos
 def get_connection():
     """Conecta ao Google Sheets usando os Segredos do Streamlit."""
     try:
-        # 🚨 CORREÇÃO: Lê o JSON como uma string do segredo 'service_account_json'
-        creds_json_str = st.secrets["service_account_json"]
-        # Converte a string em um dicionário Python
-        creds_dict = json.loads(creds_json_str)
+        # 🚨 CORREÇÃO: Lê o JSON como um dicionário direto do segredo
+        creds_dict = st.secrets["google_sheets_credentials"]
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         client = gspread.authorize(creds)
         
-        # Pega o URL da planilha dos "Segredos"
         spreadsheet_url = st.secrets["spreadsheet_url"]
         spreadsheet = client.open_by_url(spreadsheet_url)
         
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
         return worksheet
     except KeyError:
-        st.error("Erro: 'service_account_json' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
-        return None
-    except json.JSONDecodeError:
-        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido.")
+        st.error("Erro: 'google_sheets_credentials' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
         return None
     except Exception as e:
         st.error(f"Não foi possível conectar ao Google Sheets: {e}")
@@ -51,22 +44,17 @@ def load_users_df():
     if worksheet is None:
         return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
     try:
-        # Usa gspread-dataframe para ler a planilha
         df = get_as_dataframe(worksheet, evaluate_formulas=True)
         
-        # Garante que as colunas esperadas existam
         expected_cols = ["username", "password", "role", "agente", "primeiro_acesso"]
         for col in expected_cols:
              if col not in df.columns:
                  df[col] = pd.NA
         
-        # Limpa linhas vazias
         df = df.dropna(subset=['username'])
-        # Garante que 'primeiro_acesso' seja lido como Booleano
         df['primeiro_acesso'] = df['primeiro_acesso'].map({'TRUE': True, 'FALSE': False, True: True, False: False}).fillna(True)
-        # Garante que a senha seja string
         df['password'] = df['password'].astype(str)
-        return df[expected_cols] # Retorna apenas as colunas esperadas
+        return df[expected_cols] 
     except Exception as e:
         st.error(f"Não foi possível ler os dados do Google Sheets: {e}")
         return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
@@ -77,10 +65,9 @@ def save_users_df(df):
     if worksheet is None:
         return
     try:
-        # Garante que 'primeiro_acesso' seja salvo como string 'TRUE'/'FALSE'
         df['primeiro_acesso'] = df['primeiro_acesso'].map({True: 'TRUE', False: 'FALSE'})
-        worksheet.clear() # Limpa a planilha
-        set_with_dataframe(worksheet, df) # Escreve o DataFrame de volta
+        worksheet.clear() 
+        set_with_dataframe(worksheet, df) 
     except Exception as e:
         st.error(f"Falha ao salvar usuários no Google Sheets: {e}")
 
@@ -91,7 +78,6 @@ def load_users():
         st.error("O banco de dados de usuários (Google Sheet) está vazio ou não foi encontrado.")
         return {}
     
-    # Converte o DataFrame para o dicionário: {username: {password: '123', ...}}
     users_dict = df_users.set_index('username').to_dict('index')
     return users_dict
 
@@ -101,22 +87,19 @@ def save_users(users_dict):
     df = df.reset_index().rename(columns={'index': 'username'})
     save_users_df(df)
 
-# --- Funções de Lógica de Autenticação (Modificadas para usar load/save) ---
+# --- Funções de Lógica de Autenticação (Inalteradas) ---
 
 def check_password(username, password):
-    """Verifica se a senha do usuário está correta."""
     users = load_users()
-    if username in users and users[username]['password'] == str(password): # Garante comparação de string
+    if username in users and users[username]['password'] == str(password):
         return True
     return False
 
 def get_user_info(username):
-    """Retorna o dicionário de informações do usuário."""
     users = load_users()
     return users.get(username, {})
 
 def change_password_db(username, new_password):
-    """Altera a senha do usuário e marca o primeiro acesso como falso."""
     users = load_users()
     if username in users:
         users[username]['password'] = new_password
@@ -126,7 +109,6 @@ def change_password_db(username, new_password):
     return False
 
 def add_user_from_csv(login, nome_agente):
-    """Adiciona um novo usuário (agente) com senha padrão, se não existir."""
     users = load_users()
     if login not in users:
         new_user = {
@@ -141,7 +123,6 @@ def add_user_from_csv(login, nome_agente):
     return False
 
 def add_manual_user(login, nome_agente, role):
-    """Adiciona um novo usuário manualmente (admin, user) com senha padrão."""
     users = load_users()
     if not login or not nome_agente:
         return False, "Login e Nome do Agente são obrigatórios."
@@ -159,7 +140,6 @@ def add_manual_user(login, nome_agente, role):
     return True, f"Usuário '{login}' criado com sucesso."
 
 def delete_user_db(username_to_delete, current_admin_username):
-    """Deleta um usuário do arquivo JSON."""
     if username_to_delete == current_admin_username:
         return False, "Você não pode deletar a si mesmo."
         
@@ -171,10 +151,9 @@ def delete_user_db(username_to_delete, current_admin_username):
     else:
         return False, f"Usuário '{username_to_delete}' não encontrado."
 
-# --- Interface do Admin (Inalterada, mas agora usa as novas funções) ---
+# --- Interface do Admin (Inalterada) ---
 
 def user_manager_interface(df):
-    """Interface do Streamlit para o gerenciamento de usuários (apenas Admin)."""
     st.subheader("⚙️ Gerenciamento de Usuários") 
 
     users = load_users()
