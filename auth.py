@@ -255,7 +255,7 @@ def user_manager_interface(df):
 
     if st.button("Redefinir Senha do Usuário") and user_to_reset:
         if new_pass_reset:
-            if change_password_db(user_to_reset, new_password):
+            if change_password_db(user_to_reset, new_pass_reset):
                 users = load_users() 
                 users[user_to_reset]['primeiro_acesso'] = True 
                 save_users(users)
