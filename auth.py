@@ -39,7 +39,7 @@ def get_connection():
         st.error("Erro: 'service_account_json' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
         return None
     except json.JSONDecodeError:
-        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido.")
+        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido. (Verifique se há caracteres ' ' invisíveis no seu TOML)")
         return None
     except Exception as e:
         st.error(f"Não foi possível conectar ao Google Sheets: {e}")
@@ -141,7 +141,7 @@ def add_user_from_csv(login, nome_agente):
     return False
 
 def add_manual_user(login, nome_agente, role):
-    """Adiciona um novo usuário manualmente (admin, user) com senha padrão."""
+    """Adiciona um novo usuário manually (admin, user) com senha padrão."""
     users = load_users()
     if not login or not nome_agente:
         return False, "Login e Nome do Agente são obrigatórios."
