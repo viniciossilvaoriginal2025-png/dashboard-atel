@@ -4,9 +4,9 @@ import pandas as pd
 import gspread
 from gspread_dataframe import set_with_dataframe, get_as_dataframe
 from google.oauth2.service_account import Credentials
+import pandas.api.types # 🚨 ADICIONADO PARA CORREÇÃO
 
 # --- Configurações ---
-# O nome da planilha (aba) dentro do arquivo. Geralmente é 'Página1'
 WORKSHEET_NAME = "Página1" 
 DEFAULT_PASSWORD = '12345'
 
@@ -16,14 +16,17 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive'
 ]
 
-# --- Funções de Conexão (NOVAS, usando gspread) ---
+# --- Funções de Conexão (CORRIGIDAS) ---
 
 def get_connection():
     """Conecta ao Google Sheets usando os Segredos do Streamlit."""
     try:
-        # Pega as credenciais JSON dos "Segredos" do Streamlit
-        creds_json = st.secrets["connections"]["gsheets"]["service_account_info"]
-        creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
+        # 🚨 CORREÇÃO: Lê o JSON como uma string do segredo 'service_account_json'
+        creds_json_str = st.secrets["service_account_json"]
+        # Converte a string em um dicionário Python
+        creds_dict = json.loads(creds_json_str)
+        
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         client = gspread.authorize(creds)
         
         # Pega o URL da planilha dos "Segredos"
@@ -33,7 +36,10 @@ def get_connection():
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
         return worksheet
     except KeyError:
-        st.error("Erro: 'connections.gsheets' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique a Etapa 5.")
+        st.error("Erro: 'service_account_json' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
+        return None
+    except json.JSONDecodeError:
+        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido.")
         return None
     except Exception as e:
         st.error(f"Não foi possível conectar ao Google Sheets: {e}")
