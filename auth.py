@@ -20,15 +20,8 @@ SCOPES = [
 def get_connection():
     """Conecta ao Google Sheets usando os Segredos do Streamlit."""
     try:
-        creds_json_str = st.secrets["service_account_json"]
-        
-        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI --- 🚨
-        # O TOML salva as quebras de linha como '\\n'. 
-        # Precisamos transformá-las de volta em '\n' para a chave privada ser válida.
-        creds_json_str = creds_json_str.replace('\\n', '\n')
-        # 🚨 --- FIM DA CORREÇÃO --- 🚨
-        
-        creds_dict = json.loads(creds_json_str)
+        # 🚨 CORREÇÃO: Lê o JSON como um dicionário direto do segredo
+        creds_dict = st.secrets["google_sheets_credentials"]
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         client = gspread.authorize(creds)
@@ -39,10 +32,7 @@ def get_connection():
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
         return worksheet
     except KeyError:
-        st.error("Erro: 'service_account_json' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
-        return None
-    except json.JSONDecodeError:
-        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido. (Verifique se há caracteres ' ' invisíveis no seu TOML)")
+        st.error("Erro: 'google_sheets_credentials' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
         return None
     except Exception as e:
         st.error(f"Não foi possível conectar ao Google Sheets: {e}")
