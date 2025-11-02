@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 import pandas.api.types
 
 # --- Configurações ---
-WORKSHEET_NAME = "senhas" 
+WORKSHEET_NAME = "senhas" # 🚨 ATUALIZADO PARA O NOME DA SUA ABA
 DEFAULT_PASSWORD = '12345'
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -290,4 +290,3 @@ def user_manager_interface(df):
                     st.rerun()
                 else:
                     st.error(message)
-
