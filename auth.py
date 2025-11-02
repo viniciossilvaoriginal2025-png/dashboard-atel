@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 import pandas.api.types
 
 # --- Configurações ---
-WORKSHEET_NAME = "Página1" 
+WORKSHEET_NAME = "senhas" # 🚨 ATUALIZADO PARA O NOME DA SUA ABA
 DEFAULT_PASSWORD = '12345'
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -20,8 +20,19 @@ SCOPES = [
 def get_connection():
     """Conecta ao Google Sheets usando os Segredos do Streamlit."""
     try:
-        # 🚨 CORREÇÃO: Lê o JSON como um dicionário direto do segredo
-        creds_dict = st.secrets["google_sheets_credentials"]
+        creds_json_str = st.secrets["service_account_json"]
+        
+        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI (DUAS LINHAS) --- 🚨
+        
+        # 1. Corrige o erro 'Incorrect padding' (quebras de linha)
+        creds_json_str = creds_json_str.replace('\\n', '\n')
+        
+        # 2. Corrige o erro 'JSON inválido' (caracteres invisíveis ' ')
+        creds_json_str = creds_json_str.replace('\u00a0', ' ')
+        
+        # 🚨 --- FIM DA CORREÇÃO --- 🚨
+        
+        creds_dict = json.loads(creds_json_str)
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         client = gspread.authorize(creds)
@@ -32,7 +43,10 @@ def get_connection():
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
         return worksheet
     except KeyError:
-        st.error("Erro: 'google_sheets_credentials' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
+        st.error("Erro: 'service_account_json' ou 'spreadsheet_url' não encontrados nos Segredos (Secrets) do Streamlit. Verifique se você colou o TOML corretamente e salvou.")
+        return None
+    except json.JSONDecodeError:
+        st.error("Erro: O 'service_account_json' nos Segredos não é um JSON válido. (Verifique se há caracteres ' ' invisíveis no seu TOML)")
         return None
     except Exception as e:
         st.error(f"Não foi possível conectar ao Google Sheets: {e}")
@@ -252,31 +266,4 @@ def user_manager_interface(df):
                 st.success(f"Senha do usuário **{user_to_reset}** redefinida com sucesso.")
                 st.rerun()
             else:
-                st.error("Erro ao redefinir a senha.")
-        else:
-            st.warning("Preencha o campo da nova senha.")
-
-    st.markdown("---")
-
-    # 5. SEÇÃO: DELETAR USUÁRIO
-    st.markdown("##### ❌ Deletar Usuário")
-    st.warning("Atenção: Esta ação é permanente e não pode ser desfeita.")
-
-    current_admin = st.session_state.get('username')
-    users_to_delete = [login for login in users.keys() if login != current_admin]
-    
-    if not users_to_delete:
-        st.info("Nenhum outro usuário disponível para deletar.")
-    else:
-        user_to_delete = st.selectbox("Selecione o Usuário para Deletar:", users_to_delete, key="select_delete")
-        
-        with st.expander(f"Confirmar exclusão de '{user_to_delete}'"):
-            st.write(f"Você tem certeza que deseja deletar permanentemente o usuário **{user_to_delete}**?")
-            
-            if st.button("Sim, deletar este usuário", type="primary"):
-                success, message = delete_user_db(user_to_delete, current_admin)
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
+                st.error
