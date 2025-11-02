@@ -58,7 +58,14 @@ def load_users_df():
     if worksheet is None:
         return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
     try:
-        df = get_as_dataframe(worksheet, evaluate_formulas=True)
+        # --- MUDANÇA: USANDO UM MÉTODO DE LEITURA MAIS ROBUSTO ---
+        all_data = worksheet.get_all_records() # Lê os dados como lista de dicts
+        if not all_data:
+            # Isso acontece se a planilha tiver apenas cabeçalhos, mas nenhuma linha de dados
+            return pd.DataFrame(columns=["username", "password", "role", "agente", "primeiro_acesso"])
+
+        df = pd.DataFrame(all_data) # Converte para DataFrame
+        # --- FIM DA MUDANÇA ---
         
         expected_cols = ["username", "password", "role", "agente", "primeiro_acesso"]
         for col in expected_cols:
