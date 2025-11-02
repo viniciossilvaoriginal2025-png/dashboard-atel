@@ -22,7 +22,7 @@ def get_connection():
     try:
         creds_json_str = st.secrets["service_account_json"]
         
-        # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI --- 🚨
+        # 🚨 --- A CORREÇÃO PARA O ERRO 'Incorrect padding' --- 🚨
         # O TOML salva as quebras de linha como '\\n'. 
         # Esta linha transforma '\\n' (texto) de volta em '\n' (quebra de linha real).
         creds_json_str = creds_json_str.replace('\\n', '\n')
