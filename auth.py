@@ -266,4 +266,31 @@ def user_manager_interface(df):
                 st.success(f"Senha do usuário **{user_to_reset}** redefinida com sucesso.")
                 st.rerun()
             else:
-                st.error
+                st.error("Erro ao redefinir a senha.")
+        else:
+            st.warning("Preencha o campo da nova senha.")
+
+    st.markdown("---")
+
+    # 5. SEÇÃO: DELETAR USUÁRIO
+    st.markdown("##### ❌ Deletar Usuário")
+    st.warning("Atenção: Esta ação é permanente e não pode ser desfeita.")
+
+    current_admin = st.session_state.get('username')
+    users_to_delete = [login for login in users.keys() if login != current_admin]
+    
+    if not users_to_delete:
+        st.info("Nenhum outro usuário disponível para deletar.")
+    else:
+        user_to_delete = st.selectbox("Selecione o Usuário para Deletar:", users_to_delete, key="select_delete")
+        
+        with st.expander(f"Confirmar exclusão de '{user_to_delete}'"):
+            st.write(f"Você tem certeza que deseja deletar permanentemente o usuário **{user_to_delete}**?")
+            
+            if st.button("Sim, deletar este usuário", type="primary"):
+                success, message = delete_user_db(user_to_delete, current_admin)
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
