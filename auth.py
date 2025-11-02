@@ -21,13 +21,14 @@ def get_connection():
     """Conecta ao Google Sheets usando os Segredos do Streamlit."""
     try:
         creds_json_str = st.secrets["service_account_json"]
-        creds_dict = json.loads(creds_json_str)
         
         # 🚨 --- A CORREÇÃO DEFINITIVA ESTÁ AQUI --- 🚨
         # O TOML salva as quebras de linha como '\\n'. 
-        # Precisamos transformá-las de volta em '\n' para a chave privada ser válida.
-        creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+        # Esta linha transforma '\\n' (texto) de volta em '\n' (quebra de linha real).
+        creds_json_str = creds_json_str.replace('\\n', '\n')
         # 🚨 --- FIM DA CORREÇÃO --- 🚨
+        
+        creds_dict = json.loads(creds_json_str)
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         client = gspread.authorize(creds)
