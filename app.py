@@ -1187,7 +1187,9 @@ def main():
         st.info("Entre com suas credenciais na barra lateral para acessar o sistema.")
         st.markdown("---")
         st.write("Atenção: O administrador inicial tem login: `admin` e senha: `12345`.")
+        st.write("Atenção: O Agente inicial tem login: `seu nome` e senha: `12345`.")
         login_form()
 
 if __name__ == '__main__':
     main()
+
