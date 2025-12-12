@@ -3,13 +3,16 @@ import pandas as pd
 import plotly.express as px
 import os 
 import pandas.api.types
+import json
+import gspread
+from google.oauth2.service_account import Credentials
 from auth import (
     check_password,
     get_user_info,
     change_password_db,
     user_manager_interface
 )
-import datetime # Importa datetime para o calendário
+from datetime import datetime
 
 # --- Configuração Inicial ---
 st.set_page_config(
@@ -18,7 +21,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Mapeamento de meses (para facilitar a identificação dos arquivos e ordenação)
+# Mapeamento de meses
 MESES_ORDER = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", 
                "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MESES = {month: f"{month}.csv" for month in MESES_ORDER}
@@ -252,7 +255,7 @@ def load_daily_data(selected_month_name, agente_name=None):
                 # Adiciona a coluna de Data real (para o filtro de calendário)
                 month_num_index = MESES_ORDER.index(month_folder_lower)
                 month_num = month_num_index + 1
-                year = datetime.date.today().year # Usa o ano atual
+                year = datetime.now().year # Usa o ano atual
                 
                 # Cria um DataFrame de datas para garantir que a conversão funcione
                 date_components = pd.DataFrame({
@@ -417,6 +420,62 @@ def load_evaluation_data(selected_month_name, agente_name):
     if not df_list: return pd.DataFrame()
     df = pd.concat(df_list, ignore_index=True)
     return df
+
+# -------------------------------------------------------------
+# 🤖 FUNÇÕES DO FAQ e NOVA PERGUNTA
+# -------------------------------------------------------------
+
+def get_gspread_client():
+    """Conecta ao Google Sheets usando as credenciais do secrets.toml (formato google_credentials)"""
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds_dict = dict(st.secrets["google_credentials"])
+    # Correção obrigatória para Windows
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
+
+@st.cache_data(ttl=300, show_spinner="Carregando FAQ...")
+def load_faq_data_secure():
+    try:
+        client = get_gspread_client()
+        # Tenta abrir pelo NOME "BaseFAQ"
+        try:
+            sh = client.open("BaseFAQ")
+        except:
+            # Fallback para URL se nome falhar
+            sh = client.open_by_url(st.secrets["spreadsheet_url"])
+            
+        worksheet = sh.sheet1 
+        data = worksheet.get_all_records()
+        if not data: return pd.DataFrame()
+        return pd.DataFrame(data).astype(str)
+    except Exception as e:
+        # Erro silencioso ou print
+        return pd.DataFrame()
+
+def salvar_nova_pergunta(pergunta_texto):
+    try:
+        client = get_gspread_client()
+        try:
+            sh = client.open("BaseFAQ")
+        except:
+            sh = client.open_by_url(st.secrets["spreadsheet_url"])
+            
+        try:
+            worksheet = sh.worksheet("Novas_Perguntas")
+        except:
+            st.error("Erro: Crie uma aba chamada 'Novas_Perguntas' na sua planilha!")
+            return False
+            
+        quem = st.session_state.get('username', 'Anônimo')
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        
+        worksheet.append_row([agora, pergunta_texto, quem])
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar pergunta: {e}")
+        return False
 
 # --- Funções de Dashboard KPI e Histórico ---
 
@@ -1049,18 +1108,18 @@ def login_form():
     """Exibe o formulário de login no sidebar."""
     st.sidebar.title("🔒 Login")
     with st.sidebar.form("login_form"):
-        username = st.text_input("Usuário", key="login_user")
+        user = st.text_input("Usuário", key="login_user")
         password = st.text_input("Senha", type="password", key="login_pass")
         submitted = st.form_submit_button("Entrar")
         if submitted:
-            if check_password(username, password):
-                user_info = get_user_info(username)
+            if check_password(user, password):
+                user_info = get_user_info(user)
                 st.session_state['authenticated'] = True
-                st.session_state['username'] = username
+                st.session_state['username'] = user
                 st.session_state['role'] = user_info.get('role', 'user')
                 st.session_state['primeiro_acesso'] = user_info.get('primeiro_acesso', True)
                 st.session_state['agente_name'] = user_info.get('agente', 'Usuário Desconhecido')
-                st.sidebar.success(f"Bem-vindo, {username}!")
+                st.sidebar.success(f"Bem-vindo, {user}!")
                 st.rerun() 
             else: st.sidebar.error("Usuário ou senha incorretos.")
 def change_password_form():
@@ -1137,6 +1196,11 @@ def main():
     if st.session_state['authenticated']:
         change_password_form()
         logout_button()
+        
+        # 🚨 --- ADIÇÃO DA ASSINATURA --- 🚨
+        st.sidebar.markdown("---")
+        st.sidebar.caption("Desenvolvido por Vinicios Oliveira")
+        # 🚨 --- FIM DA ADIÇÃO --- 🚨
 
         if st.session_state.get('primeiro_acesso'):
             st.title("Bem-vindo(a)! 🔑")
@@ -1187,9 +1251,65 @@ def main():
         st.info("Entre com suas credenciais na barra lateral para acessar o sistema.")
         st.markdown("---")
         st.write("Atenção: O administrador inicial tem login: `admin` e senha: `12345`.")
-        st.write("Atenção: O Agente inicial tem login: `seu nome` e senha: `12345`.")
+        
+        # 🚨 --- LINKS ÚTEIS (Formatados Corretamente) --- 🚨
+        st.markdown("---")
+        st.subheader("🔗 Links Úteis")
+        
+        st.markdown("### 👉 [Abrir Planilha de senhas](https://docs.google.com/spreadsheets/d/1uxeEgHUEeDI6XOOh6UvRQeDjVYXl3ZP8Za3SbI2zVUs/edit?pli=1&gid=1807741321#gid=1807741321)")
+        st.markdown("### 👉 [Abrir Planilha de ramais](https://docs.google.com/spreadsheets/d/19_9J68jh0ox4naCgJMKl3flue45DSUFd/edit?pli=1&gid=1360104800#gid=1360104800)")
+        st.markdown("### 👉 [Abrir Planilha de escala geral](https://docs.google.com/spreadsheets/d/1eV8xtHURvypPZEOYZHAIfSFPzDHeFFow1pHzHaVZlE4/edit?gid=1626029189#gid=1626029189)")
+        st.markdown("### 👉 [Abrir Planilha de escala Call Center](https://docs.google.com/spreadsheets/d/1fqt7MH738ovcd2DeLz8C3FFZq9IuyyHF/edit?gid=2064563243#gid=2064563243)")
+        # 🚨 --- FIM DOS LINKS --- 🚨
+
+        st.markdown("---")
+        st.subheader("❓ Perguntas Frequentes (FAQ)")
+        
+        # Chama a função segura
+        df_faq = load_faq_data_secure()
+        
+        if not df_faq.empty:
+            # Busca simples
+            termo_busca = st.text_input("🔍 Buscar no FAQ", placeholder="Digite sua dúvida...")
+            
+            if termo_busca:
+                filtro = (
+                    df_faq['Pergunta'].str.contains(termo_busca, case=False, na=False) |
+                    df_faq['Resposta'].str.contains(termo_busca, case=False, na=False)
+                )
+                resultados = df_faq[filtro]
+            else:
+                resultados = df_faq 
+
+            if not resultados.empty:
+                for i, r in resultados.iterrows():
+                    # Tenta pegar a pergunta/resposta ignorando maiúsculas
+                    p = r.get('Pergunta') or r.get('pergunta') or '?'
+                    resp = r.get('Resposta') or r.get('resposta') or ''
+                    with st.expander(f"**{p}**"): st.write(resp)
+            else:
+                st.warning("Nenhum resultado encontrado.")
+                
+            # Formulário de Nova Pergunta
+            with st.expander("📝 Não encontrou? Envie sua pergunta!"):
+                with st.form("form_nova_pergunta"):
+                    nova_p = st.text_area("Digite sua dúvida aqui:")
+                    enviar = st.form_submit_button("Enviar para o suporte")
+                    if enviar and nova_p:
+                        if salvar_nova_pergunta(nova_p):
+                            st.success("Pergunta enviada com sucesso! Vamos analisar e responder em breve.")
+                        else:
+                            st.error("Erro ao enviar. Tente novamente.")
+
+        else:
+            st.info("Nenhuma pergunta encontrada (verifique se a planilha tem a aba 'FAQ' ou se o Secrets está configurado).")
+
         login_form()
+        
+        # 🚨 --- ADIÇÃO DA ASSINATURA --- 🚨
+        st.sidebar.markdown("---")
+        st.sidebar.caption("Desenvolvido por Vinicios Oliveira")
+        # 🚨 --- FIM DA ADIÇÃO --- 🚨
 
 if __name__ == '__main__':
     main()
-
