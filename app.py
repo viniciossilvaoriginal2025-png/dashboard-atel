@@ -1251,6 +1251,7 @@ def main():
         st.info("Entre com suas credenciais na barra lateral para acessar o sistema.")
         st.markdown("---")
         st.write("Atenção: O administrador inicial tem login: `admin` e senha: `12345`.")
+        st.write("Atenção: O Agente tem login: `(nome do agente)` e senha: `12345`.")
         
         # 🚨 --- LINKS ÚTEIS (Formatados Corretamente) --- 🚨
         st.markdown("---")
@@ -1313,3 +1314,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
