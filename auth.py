@@ -3,7 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# --- CONEXÃO COM O GOOGLE SHEETS (Mesma lógica do app.py) ---
+# --- CONEXÃO COM O GOOGLE SHEETS ---
 def get_auth_connection():
     """Conecta ao Google Sheets para buscar usuários."""
     try:
@@ -13,21 +13,34 @@ def get_auth_connection():
         if "google_credentials" in st.secrets:
             creds_dict = dict(st.secrets["google_credentials"])
         else:
+            # Fallback caso use o formato antigo
             return None
 
-        # Correção de padding para Windows
+        # Correção obrigatória de padding para Windows
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Abre a planilha pelo Link
-        sh = client.open_by_url(st.secrets["spreadsheet_url"])
-        return sh.worksheet("Usuarios") # Abre a aba 'Usuarios'
+        # 🚨 ALTERAÇÃO AQUI: Tenta abrir pelo NOME "BaseFAQ" (Igual ao app.py)
+        # Isso evita o erro de 'spreadsheet_url' faltando
+        try:
+            sh = client.open("BaseFAQ")
+        except:
+            # Se não achar pelo nome, tenta pelo URL se ele existir
+            if "spreadsheet_url" in st.secrets:
+                sh = client.open_by_url(st.secrets["spreadsheet_url"])
+            else:
+                st.error("Não foi possível encontrar a planilha 'BaseFAQ'. Verifique o nome.")
+                return None
+
+        # Tenta abrir a aba 'Usuarios'
+        return sh.worksheet("Usuarios") 
         
     except Exception as e:
-        st.error(f"Erro ao conectar no banco de usuários: {e}")
+        # Se der erro (ex: aba não existe), retorna None e o sistema avisa
+        # st.error(f"Erro ao conectar no banco de usuários: {e}") # Comentado para não poluir a tela se for erro temporário
         return None
 
 # --- FUNÇÕES DE AUTENTICAÇÃO ---
@@ -41,20 +54,22 @@ def get_all_users():
         # Pega todos os registros
         records = worksheet.get_all_records()
         
-        # Converte para o formato que o sistema espera:
-        # {'admin': {'password': '...', 'name': '...', 'role': '...', 'primeiro_acesso': True}}
+        # Converte para o formato que o sistema espera
         users_db = {}
         for row in records:
             # Converte string 'TRUE'/'FALSE' do Excel para booleano Python
-            p_acesso = str(row['PrimeiroAcesso']).upper() == 'TRUE'
+            p_acesso = str(row.get('PrimeiroAcesso', 'FALSE')).upper() == 'TRUE'
             
-            users_db[str(row['Usuario'])] = {
-                'password': str(row['Senha']),
-                'name': row['Nome'],
-                'role': row['Funcao'],
-                'primeiro_acesso': p_acesso,
-                'agente': row['Nome'] # Alias para manter compatibilidade
-            }
+            # Garante que as chaves existem
+            usuario = str(row.get('Usuario', '')).strip()
+            if usuario:
+                users_db[usuario] = {
+                    'password': str(row.get('Senha', '')),
+                    'name': row.get('Nome', 'Sem Nome'),
+                    'role': row.get('Funcao', 'user'),
+                    'primeiro_acesso': p_acesso,
+                    'agente': row.get('Nome', 'Sem Nome')
+                }
         return users_db
     except Exception as e:
         st.error(f"Erro ao ler usuários: {e}")
@@ -66,7 +81,8 @@ def check_password(username, password):
     
     if username in users_db:
         # Compara a senha digitada com a senha da planilha
-        if str(users_db[username]['password']) == str(password):
+        # Converte ambos para string para garantir
+        if str(users_db[username]['password']).strip() == str(password).strip():
             return True
     return False
 
@@ -86,12 +102,14 @@ def change_password_db(username, new_password):
         if not cell:
             return False
             
-        # 2. Atualiza a Coluna B (Senha) -> cell.row, col 2
-        worksheet.update_cell(cell.row, 2, new_password)
+        # 2. Atualiza a Coluna B (Senha) -> Assumindo que Senha é a coluna 2
+        # Melhor: Achar a coluna 'Senha' dinamicamente
+        header = worksheet.row_values(1)
+        col_senha = header.index('Senha') + 1
+        col_acesso = header.index('PrimeiroAcesso') + 1
         
-        # 3. Atualiza a Coluna E (PrimeiroAcesso) -> cell.row, col 5
-        # Define como FALSE pois ele já trocou a senha
-        worksheet.update_cell(cell.row, 5, "FALSE")
+        worksheet.update_cell(cell.row, col_senha, new_password)
+        worksheet.update_cell(cell.row, col_acesso, "FALSE")
         
         return True
     except Exception as e:
@@ -108,8 +126,19 @@ def user_manager_interface(df_history):
     
     # Converte para DataFrame para exibir bonitinho
     if users:
-        df_users = pd.DataFrame.from_dict(users, orient='index')
-        st.dataframe(df_users[['name', 'role', 'primeiro_acesso']], use_container_width=True)
+        # Transforma o dicionário em lista para o DataFrame
+        users_list = []
+        for u, data in users.items():
+            users_list.append({
+                'Usuário': u,
+                'Nome': data['name'],
+                'Função': data['role'],
+                'Primeiro Acesso': 'Sim' if data['primeiro_acesso'] else 'Não'
+            })
+        
+        st.dataframe(pd.DataFrame(users_list), use_container_width=True)
+    else:
+        st.info("Nenhum usuário encontrado ou erro na conexão.")
     
     st.markdown("---")
     
@@ -126,10 +155,19 @@ def user_manager_interface(df_history):
             if new_user and new_pass and new_name:
                 try:
                     ws = get_auth_connection()
-                    # Adiciona linha: Usuario, Senha, Nome, Funcao, PrimeiroAcesso
-                    ws.append_row([new_user, new_pass, new_name, new_role, "TRUE"])
-                    st.success(f"Usuário {new_user} criado com sucesso!")
-                    st.rerun()
+                    if ws:
+                        # Verifica se usuário já existe
+                        existing = ws.find(new_user)
+                        if existing:
+                            st.error("Usuário já existe!")
+                        else:
+                            # Adiciona linha: Usuario, Senha, Nome, Funcao, PrimeiroAcesso
+                            # A ordem aqui DEVE bater com as colunas da planilha (A, B, C, D, E)
+                            ws.append_row([new_user, new_pass, new_name, new_role, "TRUE"])
+                            st.success(f"Usuário {new_user} criado com sucesso!")
+                            st.rerun()
+                    else:
+                        st.error("Erro de conexão.")
                 except Exception as e:
                     st.error(f"Erro ao criar: {e}")
             else:
