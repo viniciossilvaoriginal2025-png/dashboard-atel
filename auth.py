@@ -10,7 +10,6 @@ def get_auth_connection():
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         
-        # Pega as credenciais dos secrets
         if "google_credentials" in st.secrets:
             creds_dict = dict(st.secrets["google_credentials"])
         else:
@@ -23,7 +22,7 @@ def get_auth_connection():
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Tenta abrir pelo NOME "BaseFAQ" (Igual ao app.py)
+        # Tenta abrir pelo NOME "BaseFAQ" ou URL
         try:
             sh = client.open("BaseFAQ")
         except:
@@ -32,13 +31,12 @@ def get_auth_connection():
             else:
                 return None
 
-        # Retorna a aba 'Usuarios'
         return sh.worksheet("Usuarios") 
         
     except Exception as e:
         return None
 
-# --- NOVA FUNÇÃO: Ler Agentes dos CSVs Locais ---
+# --- LEITURA LOCAL (CSVs) ---
 def get_csv_agents():
     """Varre a pasta data/ para encontrar nomes de agentes nos arquivos CSV."""
     agents = set()
@@ -51,24 +49,18 @@ def get_csv_agents():
         if filename.endswith(".csv"):
             try:
                 path = os.path.join(DATA_FOLDER, filename)
-                # Leitura robusta (igual ao app.py) para garantir que pegue os nomes
+                # Leitura robusta
                 df = pd.read_csv(path, sep=';', encoding='latin1', engine='python')
                 if df.shape[1] < 2:
                     df = pd.read_csv(path, sep=',', encoding='utf-8', engine='python')
                 
-                # Limpa nome da coluna
                 df.columns = df.columns.str.strip().str.upper().str.replace('[^A-Z0-9_]+', '', regex=True)
                 
-                # Procura coluna de Agente
-                if 'NOM_AGENTE' in df.columns:
-                    target_col = 'NOM_AGENTE'
-                elif 'NOMAGENTE' in df.columns:
-                    target_col = 'NOMAGENTE'
-                else:
-                    continue
+                if 'NOM_AGENTE' in df.columns: target = 'NOM_AGENTE'
+                elif 'NOMAGENTE' in df.columns: target = 'NOMAGENTE'
+                else: continue
                 
-                # Adiciona nomes únicos ao conjunto
-                unique_names = df[target_col].dropna().unique()
+                unique_names = df[target].dropna().unique()
                 for name in unique_names:
                     if str(name).strip():
                         agents.add(str(name).strip())
@@ -76,115 +68,145 @@ def get_csv_agents():
                 continue
     return agents
 
-# --- FUNÇÕES DE AUTENTICAÇÃO ---
+# --- FUNÇÕES DE USUÁRIOS ---
 
 def get_all_users():
-    """
-    Retorna um dicionário unificado: 
-    Usuários da Planilha (Prioridade) + Agentes dos CSVs (Implícitos).
-    """
+    """Retorna dicionário unificado: Nuvem (Prioridade) + Local (Implícito)."""
     users_db = {}
     
-    # 1. Carrega Usuários da Planilha (Nuvem)
+    # 1. Carrega da Nuvem
     worksheet = get_auth_connection()
+    cloud_usernames = set() # Para rastrear quem já está na nuvem
+    
     if worksheet:
         try:
             records = worksheet.get_all_records()
             for row in records:
-                p_acesso = str(row.get('PrimeiroAcesso', 'FALSE')).upper() == 'TRUE'
                 usuario = str(row.get('Usuario', '')).strip()
                 if usuario:
+                    p_acesso = str(row.get('PrimeiroAcesso', 'FALSE')).upper() == 'TRUE'
                     users_db[usuario] = {
                         'password': str(row.get('Senha', '')),
                         'name': row.get('Nome', 'Sem Nome'),
                         'role': row.get('Funcao', 'user'),
                         'primeiro_acesso': p_acesso,
                         'agente': row.get('Nome', 'Sem Nome'),
-                        'source': 'cloud' # Marca que veio da nuvem
+                        'source': 'cloud'
                     }
+                    cloud_usernames.add(usuario)
         except: pass
 
-    # 2. Carrega Agentes dos CSVs (Local)
-    # Só adiciona se o agente AINDA NÃO estiver na lista da planilha
+    # 2. Carrega Local (Apenas os que NÃO estão na nuvem)
     csv_agents = get_csv_agents()
     for agent in csv_agents:
-        if agent not in users_db:
-            # Cria um usuário "temporário" automático
+        if agent not in cloud_usernames:
             users_db[agent] = {
-                'password': '12345', # Senha Padrão
+                'password': '12345',
                 'name': agent,
                 'role': 'user',
-                'primeiro_acesso': True, # Força troca de senha no primeiro login
+                'primeiro_acesso': True,
                 'agente': agent,
-                'source': 'local' # Marca que veio do CSV
+                'source': 'local' # Indica que veio do CSV
             }
             
     return users_db
 
 def check_password(username, password):
-    """Verifica se o usuário e senha batem."""
     users_db = get_all_users()
-    
     if username in users_db:
-        # Compara a senha digitada
-        stored_pass = str(users_db[username]['password']).strip()
-        if stored_pass == str(password).strip():
+        if str(users_db[username]['password']).strip() == str(password).strip():
             return True
     return False
 
 def get_user_info(username):
-    """Retorna os dados do usuário."""
     users_db = get_all_users()
     return users_db.get(username, {})
 
 def change_password_db(username, new_password):
-    """
-    Atualiza a senha.
-    - Se o usuário já existe na planilha: Atualiza a célula.
-    - Se o usuário veio do CSV (local): Cria uma nova linha na planilha.
-    """
     worksheet = get_auth_connection()
     if not worksheet: return False
     
     try:
-        # Verifica se o usuário já existe na planilha
         cell = worksheet.find(username)
-        
         if cell:
-            # --- CENÁRIO 1: Usuário já existe na nuvem -> Atualiza ---
-            # Acha colunas dinamicamente
+            # Atualiza existente
             header = worksheet.row_values(1)
             col_senha = header.index('Senha') + 1
             col_acesso = header.index('PrimeiroAcesso') + 1
-            
             worksheet.update_cell(cell.row, col_senha, new_password)
             worksheet.update_cell(cell.row, col_acesso, "FALSE")
         else:
-            # --- CENÁRIO 2: Usuário novo (vindo do CSV) -> Cria na nuvem ---
-            # Adiciona: Usuario, Senha, Nome, Funcao, PrimeiroAcesso
-            # Assume que o username é o próprio nome do agente neste caso
+            # Cria novo (caso raro de migração no momento da troca)
             worksheet.append_row([username, new_password, username, "user", "FALSE"])
-        
         return True
     except Exception as e:
-        st.error(f"Erro ao salvar senha: {e}")
+        st.error(f"Erro ao salvar: {e}")
         return False
+
+# 🚨 NOVA FUNÇÃO: SINCRONIZAÇÃO EM MASSA 🚨
+def sync_csv_users_to_cloud():
+    """Pega usuários que só existem no CSV e salva na Planilha."""
+    worksheet = get_auth_connection()
+    if not worksheet:
+        st.error("Sem conexão com a planilha.")
+        return
+    
+    # 1. Pega usuários atuais da nuvem
+    try:
+        cloud_records = worksheet.get_all_records()
+        cloud_users = {str(row.get('Usuario', '')).strip() for row in cloud_records}
+    except:
+        cloud_users = set()
+    
+    # 2. Pega usuários do CSV
+    csv_agents = get_csv_agents()
+    
+    # 3. Identifica os novos
+    new_users = []
+    for agent in csv_agents:
+        if agent not in cloud_users:
+            # Formato: [Usuario, Senha, Nome, Funcao, PrimeiroAcesso]
+            new_users.append([agent, "12345", agent, "user", "TRUE"])
+            
+    # 4. Salva em massa (MUITO mais rápido que um por um)
+    if new_users:
+        try:
+            worksheet.append_rows(new_users)
+            st.success(f"✅ Sucesso! {len(new_users)} novos agentes foram cadastrados na planilha.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao sincronizar: {e}")
+    else:
+        st.info("Todos os agentes do CSV já estão na nuvem.")
 
 # --- INTERFACE DE GERENCIAMENTO (PARA O ADMIN) ---
 def user_manager_interface(df_history):
-    st.header("👥 Gerenciar Usuários (Nuvem)")
+    st.header("👥 Gerenciar Usuários")
     
     users = get_all_users()
     
+    # Conta quantos são locais vs nuvem
+    local_count = sum(1 for u in users.values() if u.get('source') == 'local')
+    
+    # 🚨 BOTÃO MÁGICO DE SINCRONIZAÇÃO 🚨
+    if local_count > 0:
+        st.info(f"💡 Detectamos **{local_count}** agentes nos arquivos CSV que ainda não estão salvos na planilha.")
+        if st.button(f"📥 Importar {local_count} Agentes para a Nuvem Agora"):
+            with st.spinner("Sincronizando..."):
+                sync_csv_users_to_cloud()
+        st.markdown("---")
+
+    # Tabela de Usuários
     if users:
         users_list = []
         for u, data in users.items():
-            source = "☁️ Nuvem" if data.get('source') == 'cloud' else "📂 CSV (Auto)"
+            source_icon = "☁️ Nuvem" if data.get('source') == 'cloud' else "📂 CSV (Temp)"
             users_list.append({
                 'Usuário': u,
                 'Nome': data['name'],
                 'Função': data['role'],
-                'Origem': source
+                'Origem': source_icon,
+                'Primeiro Acesso': 'Sim' if data['primeiro_acesso'] else 'Não'
             })
         
         st.dataframe(pd.DataFrame(users_list), use_container_width=True)
@@ -193,21 +215,22 @@ def user_manager_interface(df_history):
     
     st.markdown("---")
     
+    # Adicionar Manual
     with st.form("add_user_form"):
-        st.subheader("Adicionar Novo Usuário Manualmente")
+        st.subheader("Adicionar Usuário Manualmente")
         c1, c2 = st.columns(2)
         new_user = c1.text_input("Usuário (Login)")
         new_pass = c2.text_input("Senha Inicial")
         new_name = c1.text_input("Nome do Agente")
         new_role = c2.selectbox("Função", ["user", "admin"])
         
-        if st.form_submit_button("Salvar Usuário na Nuvem"):
+        if st.form_submit_button("Salvar na Nuvem"):
             if new_user and new_pass and new_name:
                 try:
                     ws = get_auth_connection()
                     existing = ws.find(new_user)
                     if existing:
-                        st.error("Usuário já existe na planilha!")
+                        st.error("Usuário já existe!")
                     else:
                         ws.append_row([new_user, new_pass, new_name, new_role, "TRUE"])
                         st.success(f"Usuário {new_user} criado!")
