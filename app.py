@@ -1260,7 +1260,7 @@ def main():
         st.markdown("### 👉 [Abrir Planilha de senhas](https://docs.google.com/spreadsheets/d/1uxeEgHUEeDI6XOOh6UvRQeDjVYXl3ZP8Za3SbI2zVUs/edit?pli=1&gid=1807741321#gid=1807741321)")
         st.markdown("### 👉 [Abrir Planilha de ramais](https://docs.google.com/spreadsheets/d/19_9J68jh0ox4naCgJMKl3flue45DSUFd/edit?pli=1&gid=1360104800#gid=1360104800)")
         st.markdown("### 👉 [Abrir Planilha de escala geral](https://docs.google.com/spreadsheets/d/1eV8xtHURvypPZEOYZHAIfSFPzDHeFFow1pHzHaVZlE4/edit?gid=1626029189#gid=1626029189)")
-        st.markdown("### 👉 [Abrir Planilha de escala Call Center](https://docs.google.com/spreadsheets/d/1fqt7MH738ovcd2DeLz8C3FFZq9IuyyHF/edit?gid=2064563243#gid=2064563243)")
+        st.markdown("### 👉 [Abrir Planilha de escala Call Center 2026](https://docs.google.com/spreadsheets/d/1LHunG6qL4nYOWszJ4NFlVw_QW0H3nfd4S_kUZvcqVcc/edit?pli=1&gid=788848028#gid=788848028)")
         # 🚨 --- FIM DOS LINKS --- 🚨
 
         st.markdown("---")
@@ -1314,4 +1314,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
