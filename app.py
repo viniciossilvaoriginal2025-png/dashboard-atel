@@ -1168,7 +1168,7 @@ def render_home_ranking():
                 st.caption(f"{i}º {d['Agente']} ({val} | {int(d['QTD'])} atd)")
         with ca: draw_d(diu, 'Sat_N', "⭐ Sat")
         with cb: draw_d(diu, 'FCR_N', "🎯 FCR")
-        with cc: draw_d(diu, 'TMIA_S', "⚡ TMIA", True)
+        
 
     with col2:
         st.markdown("🌙 **TIME PLANTÃO (TOP 1)**")
@@ -1398,3 +1398,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
