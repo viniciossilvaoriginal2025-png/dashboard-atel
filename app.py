@@ -850,7 +850,7 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
         is_date_available = False
         
     
-    # 4. Decide qual DataFrame usar com base nos filtros
+    # 4. Decide qual DataFrame usar with base nos filtros
     if is_date_available:
         df_filtered = df_filtered_daily.copy()
     else:
@@ -1102,6 +1102,88 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
                 cols = ['Dia'] + [col for col in df_display.columns if col != 'Dia']
                 st.dataframe(df_display[cols], use_container_width=True)
 
+# 🚨 --- BLOCO ADICIONADO: NOVO SISTEMA DE RANKING DO DIA (EXCLUSIVO LOGIN) --- 🚨
+
+PLANTAO_NAMES = ["TARCISIO", "RENAN", "FERNANDO", "LEONARDO", "GEIBSON"]
+
+def get_ranking_data_home():
+    """Busca o último dia do último mês para gerar o ranking bruto."""
+    DATA_FOLDER = 'data'
+    if not os.path.exists(DATA_FOLDER): return None, ""
+    folders = [f for f in os.listdir(DATA_FOLDER) if f.lower() in MESES_ORDER]
+    if not folders: return None, ""
+    folders.sort(key=lambda x: MESES_ORDER.index(x.lower()))
+    last_month = folders[-1]
+    month_path = os.path.join(DATA_FOLDER, last_month)
+    files = [f for f in os.listdir(month_path) if f.endswith('.csv') and f[0].isdigit()]
+    if not files: return None, ""
+    files.sort(key=lambda x: int(x.split('.')[0]))
+    last_file = files[-1]
+    
+    try:
+        # Carregamento bruto para evitar NameError e AttributeError
+        df = pd.read_csv(os.path.join(month_path, last_file), encoding='utf-8', engine='python')
+        df.columns = df.columns.str.strip().str.upper().str.replace('[^A-Z0-9_]+', '', regex=True)
+        df = df.rename(columns={'NOM_AGENTE': 'Agente', 'SATISFACAO': 'Sat', 'FCR': 'FCR', 'TMIA': 'TMIA', 'QTDATENDIMENTO': 'QTD'})
+        
+        # Limpeza Numérica Segura
+        df['Agente'] = df['Agente'].astype(str).str.strip().str.upper()
+        df['QTD'] = pd.to_numeric(df['QTD'], errors='coerce').fillna(0)
+        for c in ['FCR', 'Sat']:
+            if c in df.columns:
+                df[c+'_N'] = pd.to_numeric(df[c].astype(str).str.replace('%','').str.replace(',','.'), errors='coerce').fillna(0)
+        
+        def to_sec(x):
+            try:
+                p = str(x).split(':')
+                return int(p[0])*60 + int(p[1]) if len(p)==2 else 9999
+            except: return 9999
+        df['TMIA_S'] = df['TMIA'].apply(to_sec)
+
+        p_up = [n.upper() for n in PLANTAO_NAMES]
+        df_pla = df[df['Agente'].isin(p_up)].copy()
+        df_diu = df[~df['Agente'].isin(p_up)].copy()
+        
+        ref = f"{last_file.replace('.csv','')} de {last_month.capitalize()}"
+        return df_diu, df_pla, ref
+    except: return None, None, ""
+
+def render_home_ranking():
+    """Desenha o ranking na home sem mexer no dashboard logado."""
+    diu, pla, ref = get_ranking_data_home()
+    if diu is None: return
+
+    st.markdown(f"### 🏆 Placar do Dia ({ref})")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("☀️ **TIME DIURNO (TOP 3)**")
+        ca, cb, cc = st.columns(3)
+        def draw_d(df_s, col, label, asc=False):
+            st.write(f"**{label}**")
+            res = df_s[df_s['QTD'] > 0].sort_values(by=[col, 'QTD'], ascending=[asc, False]).head(3)
+            for i, row in enumerate(res.iterrows(), 1):
+                d = row[1]
+                val = d['TMIA'] if label=="⚡ TMIA" else (f"{d['Sat']}" if label=="⭐ Sat" else f"{d['FCR']}")
+                st.caption(f"{i}º {d['Agente']} ({val} | {int(d['QTD'])} atd)")
+        with ca: draw_d(diu, 'Sat_N', "⭐ Sat")
+        with cb: draw_d(diu, 'FCR_N', "🎯 FCR")
+        with cc: draw_d(diu, 'TMIA_S', "⚡ TMIA", True)
+
+    with col2:
+        st.markdown("🌙 **TIME PLANTÃO (TOP 1)**")
+        def draw_p(df_s, col, label, asc=False):
+            res = df_s[df_s['QTD'] > 0].sort_values(by=[col, 'QTD'], ascending=[asc, False]).head(1)
+            if not res.empty:
+                d = res.iloc[0]
+                val = d['TMIA'] if label=="⚡ TMIA" else (f"{d['Sat']}" if label=="⭐ Sat" else f"{d['FCR']}")
+                st.write(f"{label}: **{d['Agente']}** ({val} | {int(d['QTD'])} atd)")
+            else: st.write(f"{label}: ---")
+        draw_p(pla, 'Sat_N', "⭐ Sat"); draw_p(pla, 'FCR_N', "🎯 FCR"); draw_p(pla, 'TMIA_S', "⚡ TMIA", True)
+    st.markdown("---")
+
+# 🚨 --- FIM DO BLOCO ADICIONADO --- 🚨
+
 
 # --- Funções de Autenticação na UI (Inalterada) ---
 def login_form():
@@ -1248,12 +1330,16 @@ def main():
 
     else:
         st.title("Dashboard de Desempenho de Agentes")
+        
+        # 🏆 --- INSERÇÃO DO RANKING DO DIA (SÓ ONDE PEDIDO) --- 🏆
+        render_home_ranking()
+        
         st.info("Entre com suas credenciais na barra lateral para acessar o sistema.")
         st.markdown("---")
         st.write("Atenção: O administrador inicial tem login: `admin` e senha: `12345`.")
         st.write("Atenção: O Agente tem login: `(nome do agente)` e senha: `12345`.")
         
-        # 🚨 --- LINKS ÚTEIS (Formatados Corretamente) --- 🚨
+        # 🚨 --- LINKS ÚTEIS --- 🚨
         st.markdown("---")
         st.subheader("🔗 Links Úteis")
         
@@ -1262,7 +1348,6 @@ def main():
         st.markdown("### 👉 [Abrir Planilha de escala geral](https://docs.google.com/spreadsheets/d/1eV8xtHURvypPZEOYZHAIfSFPzDHeFFow1pHzHaVZlE4/edit?gid=1626029189#gid=1626029189)")
         st.markdown("### 👉 [Abrir Planilha de escala Call Center 2026](https://docs.google.com/spreadsheets/d/1LHunG6qL4nYOWszJ4NFlVw_QW0H3nfd4S_kUZvcqVcc/edit?pli=1&gid=788848028#gid=788848028)")
         st.markdown("### 👉 [Abrir Planilha de Lanche](https://docs.google.com/spreadsheets/d/1ZqkfokJMymgurvivAk8Hqc9j4DxfvlWSfndBQcRFaLA/edit?gid=23086472#gid=23086472)")
-        # 🚨 --- FIM DOS LINKS --- 🚨
 
         st.markdown("---")
         st.subheader("❓ Perguntas Frequentes (FAQ)")
@@ -1285,7 +1370,6 @@ def main():
 
             if not resultados.empty:
                 for i, r in resultados.iterrows():
-                    # Tenta pegar a pergunta/resposta ignorando maiúsculas
                     p = r.get('Pergunta') or r.get('pergunta') or '?'
                     resp = r.get('Resposta') or r.get('resposta') or ''
                     with st.expander(f"**{p}**"): st.write(resp)
@@ -1304,17 +1388,13 @@ def main():
                             st.error("Erro ao enviar. Tente novamente.")
 
         else:
-            st.info("Nenhuma pergunta encontrada (verifique se a planilha tem a aba 'FAQ' ou se o Secrets está configurado).")
+            st.info("Nenhuma pergunta encontrada.")
 
         login_form()
         
         # 🚨 --- ADIÇÃO DA ASSINATURA --- 🚨
         st.sidebar.markdown("---")
         st.sidebar.caption("Desenvolvido por Vinicios Oliveira")
-        # 🚨 --- FIM DA ADIÇÃO --- 🚨
 
 if __name__ == '__main__':
     main()
-
-
-
