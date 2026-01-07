@@ -77,10 +77,10 @@ def apply_formatting(df):
 # --- Funções de Carregamento e Tratamento de Dados ---
 # Função principal: Carrega UM mês (usada para o painel principal)
 @st.cache_data(show_spinner="Carregando dados do mês selecionado...")
-def load_and_preprocess_data(file_name):
-    """Carrega o CSV específico do mês na pasta 'data/'."""
+def load_and_preprocess_data(file_name, selected_year): # ADICIONADO selected_year
+    """Carrega o CSV específico do mês na pasta 'data/[ANO]/'."""
     
-    DATA_FOLDER = 'data' 
+    DATA_FOLDER = os.path.join('data', str(selected_year)) # ALTERADO
     file_path = os.path.join(DATA_FOLDER, file_name)
     
     if not os.path.exists(file_path):
@@ -155,9 +155,9 @@ def load_and_preprocess_data(file_name):
 
 # --- Função 2: Carrega TODOS os dados (para Histórico e Admin) ---
 @st.cache_data(show_spinner="Carregando histórico completo...")
-def load_all_history_data():
-    """Carrega TODOS os CSVs de TODOS os meses disponíveis na pasta 'data/' para o histórico."""
-    DATA_FOLDER = 'data' 
+def load_all_history_data(selected_year): # ADICIONADO selected_year
+    """Carrega TODOS os CSVs de TODOS os meses disponíveis na pasta 'data/[ANO]/' para o histórico."""
+    DATA_FOLDER = os.path.join('data', str(selected_year)) # ALTERADO
     df_list = []
     
     if not os.path.exists(DATA_FOLDER):
@@ -221,11 +221,11 @@ def load_all_history_data():
 
 # --- Função 3: Carrega os dados DIÁRIOS de uma subpasta ---
 @st.cache_data(show_spinner="Carregando detalhes diários...")
-def load_daily_data(selected_month_name, agente_name=None):
-    """Carrega todos os CSVs da subpasta 'data/[mês]' e filtra pelo agente (se fornecido)."""
+def load_daily_data(selected_month_name, selected_year, agente_name=None): # ADICIONADO selected_year
+    """Carrega todos os CSVs da subpasta 'data/[ANO]/[mês]' e filtra pelo agente (se fornecido)."""
     
     month_folder_lower = selected_month_name.lower()
-    DATA_FOLDER = os.path.join('data', month_folder_lower) # Caminho: data/outubro
+    DATA_FOLDER = os.path.join('data', str(selected_year), month_folder_lower) # ALTERADO: Inclui ano no caminho
     
     df_list = []
     
@@ -255,7 +255,7 @@ def load_daily_data(selected_month_name, agente_name=None):
                 # Adiciona a coluna de Data real (para o filtro de calendário)
                 month_num_index = MESES_ORDER.index(month_folder_lower)
                 month_num = month_num_index + 1
-                year = datetime.now().year # Usa o ano atual
+                year = int(selected_year) # Usa o ano SELECIONADO
                 
                 # Cria um DataFrame de datas para garantir que a conversão funcione
                 date_components = pd.DataFrame({
@@ -305,10 +305,10 @@ def load_daily_data(selected_month_name, agente_name=None):
 
 # --- Função 4: Carrega dados do Ranking Semanal ---
 @st.cache_data(show_spinner="Carregando dados do ranking semanal...")
-def load_ranking_data(filename): # Recebe o nome do arquivo
-    """Carrega um arquivo CSV de ranking da pasta 'data/semana/'."""
+def load_ranking_data(filename, selected_year): # ADICIONADO selected_year
+    """Carrega um arquivo CSV de ranking da pasta 'data/[ANO]/semana/'."""
     
-    RANKING_FILE_PATH = os.path.join('data', 'semana', filename)
+    RANKING_FILE_PATH = os.path.join('data', str(selected_year), 'semana', filename) # ALTERADO: Inclui ano no caminho
     
     if not os.path.exists(RANKING_FILE_PATH):
         # Retorna um DF vazio, o erro será tratado na função de exibição
@@ -369,11 +369,11 @@ def load_ranking_data(filename): # Recebe o nome do arquivo
 
 # --- Função 5: Carrega os dados de AVALIAÇÃO Diária ---
 @st.cache_data(show_spinner="Carregando avaliações diárias...")
-def load_evaluation_data(selected_month_name, agente_name):
-    """Carrega todos os CSVs da subpasta 'data/[mês]/notas/' e filtra pelo agente."""
+def load_evaluation_data(selected_month_name, agente_name, selected_year): # ADICIONADO selected_year
+    """Carrega todos os CSVs da subpasta 'data/[ANO]/[mês]/notas/' e filtra pelo agente."""
     
     month_folder_lower = selected_month_name.lower()
-    EVAL_FOLDER = os.path.join('data', month_folder_lower, 'notas') # Caminho: data/outubro/notas
+    EVAL_FOLDER = os.path.join('data', str(selected_year), month_folder_lower, 'notas') # ALTERADO: Inclui ano no caminho
     
     df_list = []
     
@@ -525,7 +525,9 @@ def display_monthly_history(agente_name=None): # Nome do agente é opcional
         st.header("📈 Histórico Mês a Mês (Geral)")
 
     # Carrega todos os dados históricos DENTRO desta função
-    df_full_history = load_all_history_data()
+    # PRECISAMOS SABER O ANO SELECIONADO AQUI, VAMOS PEGAR DA SESSION STATE
+    selected_year = st.session_state.get('selected_year', '2026')
+    df_full_history = load_all_history_data(selected_year) # PASSANDO O ANO
 
     if df_full_history.empty:
         st.info("Não há dados históricos disponíveis.")
@@ -623,13 +625,15 @@ def display_daily_detail(selected_month, agente_name=None): # Agente opcional
     st.header(f"📅 Detalhe Dia a Dia ({selected_month.capitalize()})")
     
     # Carrega dados diários (filtrados por agente se agente_name for fornecido)
-    df_daily = load_daily_data(selected_month_name=selected_month, agente_name=agente_name)
+    # PRECISAMOS SABER O ANO SELECIONADO AQUI TAMBÉM
+    selected_year = st.session_state.get('selected_year', '2026')
+    df_daily = load_daily_data(selected_month_name=selected_month, selected_year=selected_year, agente_name=agente_name) # PASSANDO O ANO
     
     if df_daily.empty:
         if agente_name:
-            st.info(f"Nenhum dado diário encontrado para {agente_name} na subpasta 'data/{selected_month.lower()}/'.")
+            st.info(f"Nenhum dado diário encontrado para {agente_name} na subpasta 'data/{selected_year}/{selected_month.lower()}/'.")
         else:
-            st.info(f"Nenhum dado diário encontrado na subpasta 'data/{selected_month.lower()}/'.")
+            st.info(f"Nenhum dado diário encontrado na subpasta 'data/{selected_year}/{selected_month.lower()}/'.")
         return
 
     # Define as agregações
@@ -706,10 +710,12 @@ def display_evaluation_details(selected_month, agente_name):
     """Carrega e exibe a tabela de avaliações diárias (Tabela 4)."""
     st.header("⭐ Minhas Avaliações (Detalhe Diário)")
     
-    df_evals = load_evaluation_data(selected_month_name=selected_month, agente_name=agente_name)
+    # PRECISAMOS SABER O ANO SELECIONADO AQUI TAMBÉM
+    selected_year = st.session_state.get('selected_year', '2026')
+    df_evals = load_evaluation_data(selected_month_name=selected_month, agente_name=agente_name, selected_year=selected_year) # PASSANDO O ANO
     
     if df_evals.empty:
-        st.info(f"Nenhuma avaliação encontrada para {agente_name} na subpasta 'data/{selected_month.lower()}/notas/'.")
+        st.info(f"Nenhuma avaliação encontrada para {agente_name} na subpasta 'data/{selected_year}/{selected_month.lower()}/notas/'.")
         return
 
     # Garante que 'DaySort' existe para ordenação
@@ -784,9 +790,10 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
     st.title(f"🧑‍💼 Dashboard Global - {st.session_state['selected_month_name']}")
 
     selected_month = st.session_state['selected_month_name']
+    selected_year = st.session_state.get('selected_year', '2026') # Recupera o ano
 
     # 1. Carrega os dados DIÁRIOS para este mês (para todos os agentes)
-    df_daily_full = load_daily_data(selected_month_name=selected_month, agente_name=None)
+    df_daily_full = load_daily_data(selected_month_name=selected_month, selected_year=selected_year, agente_name=None) # PASSANDO O ANO
     
     is_date_available = not df_daily_full.empty and 'Data' in df_daily_full.columns
 
@@ -845,12 +852,12 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
             is_date_available = False
         
     else:
-        st.sidebar.info(f"Nenhum dado diário encontrado na subpasta 'data/{selected_month.lower()}/'. Exibindo o consolidado mensal.")
+        st.sidebar.info(f"Nenhum dado diário encontrado na subpasta 'data/{selected_year}/{selected_month.lower()}/'. Exibindo o consolidado mensal.")
         df_filtered_daily = pd.DataFrame() 
         is_date_available = False
         
     
-    # 4. Decide qual DataFrame usar with base nos filtros
+    # 4. Decide qual DataFrame usar com base nos filtros
     if is_date_available:
         df_filtered = df_filtered_daily.copy()
     else:
@@ -913,7 +920,7 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
             # --- RANKING 1: SEMANAL ATUAL ---
             with col_rank1:
                 st.markdown("##### 🥇 Semana Atual")
-                df_ranking_atual = load_ranking_data("ranking_semanal_atual.csv")
+                df_ranking_atual = load_ranking_data("ranking_semanal_atual.csv", selected_year) # PASSANDO O ANO
                 
                 if df_ranking_atual.empty:
                     st.warning("Arquivo 'ranking_semanal_atual.csv' não encontrado.")
@@ -949,7 +956,7 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
             # --- RANKING 2: SEMANAL ANTERIOR ---
             with col_rank2:
                 st.markdown("##### 🥈 Semana Anterior")
-                df_ranking_anterior = load_ranking_data("ranking_semanal_anterior.csv")
+                df_ranking_anterior = load_ranking_data("ranking_semanal_anterior.csv", selected_year) # PASSANDO O ANO
                 
                 if df_ranking_anterior.empty:
                     st.warning("Arquivo 'ranking_semanal_anterior.csv' não encontrado.")
@@ -1102,88 +1109,6 @@ def display_admin_dashboard(df_monthly_aggregate): # df (passado do main) é o M
                 cols = ['Dia'] + [col for col in df_display.columns if col != 'Dia']
                 st.dataframe(df_display[cols], use_container_width=True)
 
-# 🚨 --- BLOCO ADICIONADO: NOVO SISTEMA DE RANKING DO DIA (EXCLUSIVO LOGIN) --- 🚨
-
-PLANTAO_NAMES = ["TARCISIO", "RENAN", "FERNANDO", "LEONARDO", "GEIBSON"]
-
-def get_ranking_data_home():
-    """Busca o último dia do último mês para gerar o ranking bruto."""
-    DATA_FOLDER = 'data'
-    if not os.path.exists(DATA_FOLDER): return None, ""
-    folders = [f for f in os.listdir(DATA_FOLDER) if f.lower() in MESES_ORDER]
-    if not folders: return None, ""
-    folders.sort(key=lambda x: MESES_ORDER.index(x.lower()))
-    last_month = folders[-1]
-    month_path = os.path.join(DATA_FOLDER, last_month)
-    files = [f for f in os.listdir(month_path) if f.endswith('.csv') and f[0].isdigit()]
-    if not files: return None, ""
-    files.sort(key=lambda x: int(x.split('.')[0]))
-    last_file = files[-1]
-    
-    try:
-        # Carregamento bruto para evitar NameError e AttributeError
-        df = pd.read_csv(os.path.join(month_path, last_file), encoding='utf-8', engine='python')
-        df.columns = df.columns.str.strip().str.upper().str.replace('[^A-Z0-9_]+', '', regex=True)
-        df = df.rename(columns={'NOM_AGENTE': 'Agente', 'SATISFACAO': 'Sat', 'FCR': 'FCR', 'TMIA': 'TMIA', 'QTDATENDIMENTO': 'QTD'})
-        
-        # Limpeza Numérica Segura
-        df['Agente'] = df['Agente'].astype(str).str.strip().str.upper()
-        df['QTD'] = pd.to_numeric(df['QTD'], errors='coerce').fillna(0)
-        for c in ['FCR', 'Sat']:
-            if c in df.columns:
-                df[c+'_N'] = pd.to_numeric(df[c].astype(str).str.replace('%','').str.replace(',','.'), errors='coerce').fillna(0)
-        
-        def to_sec(x):
-            try:
-                p = str(x).split(':')
-                return int(p[0])*60 + int(p[1]) if len(p)==2 else 9999
-            except: return 9999
-        df['TMIA_S'] = df['TMIA'].apply(to_sec)
-
-        p_up = [n.upper() for n in PLANTAO_NAMES]
-        df_pla = df[df['Agente'].isin(p_up)].copy()
-        df_diu = df[~df['Agente'].isin(p_up)].copy()
-        
-        ref = f"{last_file.replace('.csv','')} de {last_month.capitalize()}"
-        return df_diu, df_pla, ref
-    except: return None, None, ""
-
-def render_home_ranking():
-    """Desenha o ranking na home sem mexer no dashboard logado."""
-    diu, pla, ref = get_ranking_data_home()
-    if diu is None: return
-
-    st.markdown(f"### 🏆 Placar do Dia ({ref})")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("☀️ **TIME DIURNO (TOP 3)**")
-        ca, cb, cc = st.columns(3)
-        def draw_d(df_s, col, label, asc=False):
-            st.write(f"**{label}**")
-            res = df_s[df_s['QTD'] > 0].sort_values(by=[col, 'QTD'], ascending=[asc, False]).head(3)
-            for i, row in enumerate(res.iterrows(), 1):
-                d = row[1]
-                val = d['TMIA'] if label=="⚡ TMIA" else (f"{d['Sat']}" if label=="⭐ Sat" else f"{d['FCR']}")
-                st.caption(f"{i}º {d['Agente']} ({val} | {int(d['QTD'])} atd)")
-        with ca: draw_d(diu, 'Sat_N', "⭐ Sat")
-        with cb: draw_d(diu, 'FCR_N', "🎯 FCR")
-        
-
-    with col2:
-        st.markdown("🌙 **TIME PLANTÃO (TOP 1)**")
-        def draw_p(df_s, col, label, asc=False):
-            res = df_s[df_s['QTD'] > 0].sort_values(by=[col, 'QTD'], ascending=[asc, False]).head(1)
-            if not res.empty:
-                d = res.iloc[0]
-                val = d['TMIA'] if label=="⚡ TMIA" else (f"{d['Sat']}" if label=="⭐ Sat" else f"{d['FCR']}")
-                st.write(f"{label}: **{d['Agente']}** ({val} | {int(d['QTD'])} atd)")
-            else: st.write(f"{label}: ---")
-        draw_p(pla, 'Sat_N', "⭐ Sat"); draw_p(pla, 'FCR_N', "🎯 FCR"); draw_p(pla, 'TMIA_S', "⚡ TMIA", True)
-    st.markdown("---")
-
-# 🚨 --- FIM DO BLOCO ADICIONADO --- 🚨
-
 
 # --- Funções de Autenticação na UI (Inalterada) ---
 def login_form():
@@ -1237,9 +1162,24 @@ def main():
     
     # --- Configuração do Filtro Mensal na Sidebar ---
     st.sidebar.markdown("---")
-    DATA_FOLDER = 'data'
     
-    # 1. Busca pelos arquivos CSV disponíveis na pasta 'data'
+    # === SELETOR DE ANO ADICIONADO AQUI ===
+    anos_disponiveis = ["2026", "2025"]
+    if 'selected_year' not in st.session_state:
+        st.session_state['selected_year'] = anos_disponiveis[0]
+    
+    selected_year = st.sidebar.selectbox(
+        "Selecione o Ano:", 
+        anos_disponiveis, 
+        index=anos_disponiveis.index(st.session_state['selected_year'])
+    )
+    st.session_state['selected_year'] = selected_year
+    
+    # Define a pasta com base no ano selecionado
+    DATA_FOLDER = os.path.join('data', selected_year)
+    # ========================================
+
+    # 1. Busca pelos arquivos CSV disponíveis na pasta 'data/[ANO]'
     available_files = []
     if os.path.exists(DATA_FOLDER):
         for filename in os.listdir(DATA_FOLDER):
@@ -1272,7 +1212,8 @@ def main():
     # 3. Carrega o DataFrame (apenas o mês selecionado para a visão principal)
     df = pd.DataFrame()
     if file_to_load:
-        df = load_and_preprocess_data(file_to_load)
+        # PASSANDO O ANO SELECIONADO PARA A FUNÇÃO DE CARGA
+        df = load_and_preprocess_data(file_to_load, selected_year)
     
     
     if st.session_state['authenticated']:
@@ -1293,8 +1234,8 @@ def main():
             return 
             
         # Verifica se há dados carregados para o mês selecionado
-        if df.empty and not os.path.exists('data'): 
-             st.warning(f"Não há dados disponíveis para o mês de **{st.session_state.get('selected_month_name', 'N/A')}**. Verifique o console para erros ou a estrutura de pastas.")
+        if df.empty and not os.path.exists(DATA_FOLDER): 
+             st.warning(f"Não há dados disponíveis para o mês de **{st.session_state.get('selected_month_name', 'N/A')}** no ano **{selected_year}**. Verifique o console para erros ou a estrutura de pastas.")
              # Permite continuar para mostrar o histórico se houver
         
         agente_name = st.session_state.get('agente_name')
@@ -1311,7 +1252,8 @@ def main():
                 display_admin_dashboard(df) # Passa o DF MENSAL
             elif admin_selection == "Gerenciar Usuários":
                 # Gerenciador de usuários precisa de todos os dados históricos para funcionar
-                df_full_history = load_all_history_data() 
+                # PASSANDO O ANO SELECIONADO
+                df_full_history = load_all_history_data(selected_year) 
                 if 'Agente' in df_full_history.columns:
                     user_manager_interface(df_full_history) # Passa o DF completo
                 else:
@@ -1319,27 +1261,24 @@ def main():
                 
         else: # Usuário Comum
             # Verifica se há algum dado histórico para o agente antes de dar o aviso final
-            df_full_history_check = load_all_history_data()
+            # PASSANDO O ANO SELECIONADO
+            df_full_history_check = load_all_history_data(selected_year)
             df_agent_hist_check = df_full_history_check[df_full_history_check['Agente'] == agente_name].copy() if 'Agente' in df_full_history_check.columns else pd.DataFrame()
 
             if not df_agent_filtered.empty or not df_agent_hist_check.empty :
                  display_user_dashboard(df_agent_filtered) # Passa apenas os dados do mês selecionado
             else:
-                 st.warning(f"Não foram encontrados dados de desempenho para o agente: **{agente_name}** em nenhum mês.")
+                 st.warning(f"Não foram encontrados dados de desempenho para o agente: **{agente_name}** em nenhum mês de {selected_year}.")
 
 
     else:
         st.title("Dashboard de Desempenho de Agentes")
-        
-        # 🏆 --- INSERÇÃO DO RANKING DO DIA (SÓ ONDE PEDIDO) --- 🏆
-        render_home_ranking()
-        
         st.info("Entre com suas credenciais na barra lateral para acessar o sistema.")
         st.markdown("---")
         st.write("Atenção: O administrador inicial tem login: `admin` e senha: `12345`.")
         st.write("Atenção: O Agente tem login: `(nome do agente)` e senha: `12345`.")
         
-        # 🚨 --- LINKS ÚTEIS --- 🚨
+        # 🚨 --- LINKS ÚTEIS (Formatados Corretamente) --- 🚨
         st.markdown("---")
         st.subheader("🔗 Links Úteis")
         
@@ -1348,6 +1287,7 @@ def main():
         st.markdown("### 👉 [Abrir Planilha de escala geral](https://docs.google.com/spreadsheets/d/1eV8xtHURvypPZEOYZHAIfSFPzDHeFFow1pHzHaVZlE4/edit?gid=1626029189#gid=1626029189)")
         st.markdown("### 👉 [Abrir Planilha de escala Call Center 2026](https://docs.google.com/spreadsheets/d/1LHunG6qL4nYOWszJ4NFlVw_QW0H3nfd4S_kUZvcqVcc/edit?pli=1&gid=788848028#gid=788848028)")
         st.markdown("### 👉 [Abrir Planilha de Lanche](https://docs.google.com/spreadsheets/d/1ZqkfokJMymgurvivAk8Hqc9j4DxfvlWSfndBQcRFaLA/edit?gid=23086472#gid=23086472)")
+        # 🚨 --- FIM DOS LINKS --- 🚨
 
         st.markdown("---")
         st.subheader("❓ Perguntas Frequentes (FAQ)")
@@ -1370,6 +1310,7 @@ def main():
 
             if not resultados.empty:
                 for i, r in resultados.iterrows():
+                    # Tenta pegar a pergunta/resposta ignorando maiúsculas
                     p = r.get('Pergunta') or r.get('pergunta') or '?'
                     resp = r.get('Resposta') or r.get('resposta') or ''
                     with st.expander(f"**{p}**"): st.write(resp)
@@ -1388,14 +1329,14 @@ def main():
                             st.error("Erro ao enviar. Tente novamente.")
 
         else:
-            st.info("Nenhuma pergunta encontrada.")
+            st.info("Nenhuma pergunta encontrada (verifique se a planilha tem a aba 'FAQ' ou se o Secrets está configurado).")
 
         login_form()
         
         # 🚨 --- ADIÇÃO DA ASSINATURA --- 🚨
         st.sidebar.markdown("---")
         st.sidebar.caption("Desenvolvido por Vinicios Oliveira")
+        # 🚨 --- FIM DA ADIÇÃO --- 🚨
 
 if __name__ == '__main__':
     main()
-
